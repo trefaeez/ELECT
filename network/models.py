@@ -512,6 +512,7 @@ class Load(models.Model, CableMixin):
     """
     نموذج للأحمال الكهربائية
     يمكن ربطه بأي قاطع في أي لوحة
+    يتيح تصنيف الأحمال حسب النوع (إنارة، آلات، تكييف، إلخ)
     """
     VOLTAGE_CHOICES = [
         ('11KV', '11 كيلو فولت'),
@@ -532,14 +533,67 @@ class Load(models.Model, CableMixin):
         ('tray', 'في مجاري كابلات'),
     ]
     
+    # إضافة خيارات تصنيف الأحمال
+    LOAD_TYPE_CHOICES = [
+        ('machine', 'آلة صناعية'),
+        ('service_panel', 'لوحة خدمة'),
+        ('outlet', 'بلاجة أو مخرج كهربائي'),
+        ('lighting', 'إنارة'),
+        ('fan', 'مراوح'),
+        ('screen', 'شاشات'),
+        ('exhaust', 'شفاطات هواء'),
+        ('ac', 'تكييف'),
+        ('heater', 'سخان'),
+        ('refrigerator', 'ثلاجات وتبريد'),
+        ('motor', 'محركات'),
+        ('pump', 'مضخات'),
+        ('other', 'أخرى'),
+    ]
+    
     name = models.CharField(max_length=100, unique=True, help_text="اسم الحمل")
+    
+    # إضافة حقل تصنيف الحمل
+    load_type = models.CharField(
+        max_length=20, 
+        choices=LOAD_TYPE_CHOICES,
+        help_text="نوع الحمل (آلة، إنارة، شفاط، إلخ)",
+        default='other'
+    )
+    
+    # إضافة حقل لوصف الحمل
+    description = models.TextField(
+        help_text="وصف تفصيلي للحمل", 
+        blank=True, 
+        null=True
+    )
+    
+    # إضافة حقل للعلامة الشارحة (الفائدة، المكان، معلومات إضافية)
+    label = models.CharField(
+        max_length=100, 
+        help_text="علامة توضيحية للحمل (مثل 'إنارة الممر'، 'بلاجة الاستراحة')", 
+        blank=True, 
+        null=True
+    )
+    
+    # إضافة حقل لاستهلاك الطاقة المقدر (بالكيلو واط/ساعة)
+    estimated_usage_hours = models.FloatField(
+        help_text="عدد ساعات التشغيل اليومية المقدرة", 
+        default=8.0
+    )
+    
+    # إضافة حقل معامل القدرة
+    power_factor = models.FloatField(
+        help_text="معامل القدرة (Power Factor) من 0 إلى 1", 
+        default=0.85
+    )
+    
     panel = models.ForeignKey(
         Panel, 
         on_delete=models.CASCADE, 
         related_name='loads',
         help_text="اللوحة المغذية للحمل",
-        null=True,  # السماح بقيمة null مؤقتاً للترحيل
-        blank=True  # السماح بحقل فارغ في النماذج
+        null=True,
+        blank=True
     )
     breaker = models.ForeignKey(
         CircuitBreaker, 
@@ -603,9 +657,29 @@ class Load(models.Model, CableMixin):
                 break
                 
         return ' → '.join(path)
+    
+    def calculate_daily_consumption(self):
+        """حساب الاستهلاك اليومي للحمل بالكيلو واط ساعة"""
+        watts = self.power_consumption if self.power_consumption > 0 else (self.voltage_value() * self.ampacity)
+        kwh = (watts * self.estimated_usage_hours) / 1000
+        return kwh
+        
+    def voltage_value(self):
+        """تحويل قيمة الجهد من النص إلى رقم"""
+        if self.voltage == '11KV':
+            return 11000
+        else:
+            return float(self.voltage)
+    
+    def calculate_monthly_cost(self, price_per_kwh=0.18):
+        """حساب التكلفة الشهرية التقديرية للحمل"""
+        daily_kwh = self.calculate_daily_consumption()
+        monthly_kwh = daily_kwh * 30  # تقريبًا
+        return monthly_kwh * price_per_kwh
 
     def __str__(self):
-        return self.name
+        load_type_display = dict(self.LOAD_TYPE_CHOICES).get(self.load_type, "غير محدد")
+        return f"{self.name} ({load_type_display})"
     
     def save(self, *args, **kwargs):
         """
@@ -627,4 +701,14 @@ class Load(models.Model, CableMixin):
                 # 1. ضبط لوحة الحمل لتطابق لوحة القاطع
                 self.panel = self.breaker.panel
         
+        # حساب استهلاك الطاقة تلقائيًا إذا لم يتم تحديده
+        if not self.power_consumption and self.ampacity > 0:
+            # P = V × I × PF للتيار المتردد أحادي الطور
+            voltage_val = self.voltage_value()
+            self.power_consumption = voltage_val * self.ampacity * self.power_factor
+        
         super().save(*args, **kwargs)
+        
+    class Meta:
+        verbose_name = "حمل كهربائي"
+        verbose_name_plural = "الأحمال الكهربائية"

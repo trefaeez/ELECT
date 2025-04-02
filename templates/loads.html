@@ -75,6 +75,27 @@
 
         <!-- قسم الأحمال -->
         <section class="mb-5">
+            <!-- فلتر نوع الحمل -->
+            <div class="mb-3">
+                <label for="load-filter-type" class="form-label me-2">تصفية حسب النوع:</label>
+                <select id="load-filter-type" class="form-select d-inline-block" style="width: auto;">
+                    <option value="">جميع الأنواع</option>
+                    <option value="machine">آلة صناعية</option>
+                    <option value="service_panel">لوحة خدمة</option>
+                    <option value="outlet">بلاجة أو مخرج كهربائي</option>
+                    <option value="lighting">إنارة</option>
+                    <option value="fan">مراوح</option>
+                    <option value="screen">شاشات</option>
+                    <option value="exhaust">شفاطات هواء</option>
+                    <option value="ac">تكييف</option>
+                    <option value="heater">سخان</option>
+                    <option value="refrigerator">ثلاجات وتبريد</option>
+                    <option value="motor">محركات</option>
+                    <option value="pump">مضخات</option>
+                    <option value="other">أخرى</option>
+                </select>
+            </div>
+            
             <!-- جدول الأحمال -->
             <div class="table-responsive">
                 <table class="table table-bordered table-hover">
@@ -82,6 +103,7 @@
                         <tr>
                             <th>#</th>
                             <th>الاسم</th>
+                            <th>النوع</th>
                             <th>الجهد</th>
                             <th>الأمبير</th>
                             <th>الاستهلاك (واط)</th>
@@ -93,7 +115,7 @@
                     <tbody id="loads-table-body">
                         <!-- سيتم إضافة الصفوف ديناميكياً من خلال JavaScript -->
                         <tr>
-                            <td colspan="8" class="text-center">يرجى اختيار قاطع أو انتظار تحميل البيانات...</td>
+                            <td colspan="9" class="text-center">يرجى اختيار قاطع أو انتظار تحميل البيانات...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -108,7 +130,7 @@
 
     <!-- مودال إضافة حمل جديد -->
     <div class="modal fade" id="addLoadModal" tabindex="-1" aria-labelledby="addLoadModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addLoadModalLabel">إضافة حمل جديد</h5>
@@ -117,30 +139,78 @@
                 <div class="modal-body">
                     <form id="add-load-form">
                         <input type="hidden" id="load-breaker-id">
-                        <div class="mb-3">
-                            <label for="load-name" class="form-label">اسم الحمل <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="load-name" required>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="load-name" class="form-label">اسم الحمل <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="load-name" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="load-type" class="form-label">نوع الحمل <span class="text-danger">*</span></label>
+                                <select class="form-select" id="load-type" required>
+                                    <option value="machine">آلة صناعية</option>
+                                    <option value="service_panel">لوحة خدمة</option>
+                                    <option value="outlet">بلاجة أو مخرج كهربائي</option>
+                                    <option value="lighting">إنارة</option>
+                                    <option value="fan">مراوح</option>
+                                    <option value="screen">شاشات</option>
+                                    <option value="exhaust">شفاطات هواء</option>
+                                    <option value="ac">تكييف</option>
+                                    <option value="heater">سخان</option>
+                                    <option value="refrigerator">ثلاجات وتبريد</option>
+                                    <option value="motor">محركات</option>
+                                    <option value="pump">مضخات</option>
+                                    <option value="other">أخرى</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="load-voltage" class="form-label">الجهد الكهربائي <span class="text-danger">*</span></label>
-                            <select class="form-select" id="load-voltage" required>
-                                <option value="220">220 فولت</option>
-                                <option value="380">380 فولت</option>
-                                <option value="24">24 فولت</option>
-                            </select>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="load-voltage" class="form-label">الجهد الكهربائي <span class="text-danger">*</span></label>
+                                <select class="form-select" id="load-voltage" required>
+                                    <option value="220">220 فولت</option>
+                                    <option value="380">380 فولت</option>
+                                    <option value="24">24 فولت</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="load-ampacity" class="form-label">الأمبير <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="load-ampacity" min="0" required>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="load-ampacity" class="form-label">الأمبير <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" id="load-ampacity" min="0" required>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="load-power-consumption" class="form-label">الاستهلاك (واط)</label>
+                                <input type="number" class="form-control" id="load-power-consumption" min="0">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="load-power-factor" class="form-label">معامل القدرة</label>
+                                <input type="number" class="form-control" id="load-power-factor" min="0" max="1" step="0.01" value="0.85">
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="load-power-consumption" class="form-label">الاستهلاك (واط)</label>
-                            <input type="number" class="form-control" id="load-power-consumption" min="0">
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="load-cable-length" class="form-label">طول الكابل (متر)</label>
+                                <input type="number" class="form-control" id="load-cable-length" min="0">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="load-usage-hours" class="form-label">ساعات التشغيل اليومية</label>
+                                <input type="number" class="form-control" id="load-usage-hours" min="0" max="24" step="0.5" value="8">
+                            </div>
                         </div>
+                        
                         <div class="mb-3">
-                            <label for="load-cable-length" class="form-label">طول الكابل (متر)</label>
-                            <input type="number" class="form-control" id="load-cable-length" min="0">
+                            <label for="load-label" class="form-label">علامة توضيحية (مثل: إنارة الممر، بلاجة الاستراحة)</label>
+                            <input type="text" class="form-control" id="load-label">
                         </div>
+                        
+                        <div class="mb-3">
+                            <label for="load-description" class="form-label">وصف تفصيلي للحمل</label>
+                            <textarea class="form-control" id="load-description" rows="3"></textarea>
+                        </div>
+                        
                         <div class="alert alert-info">
                             سيتم ربط الحمل تلقائيًا بالقاطع المحدد
                         </div>

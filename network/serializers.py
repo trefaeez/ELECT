@@ -244,13 +244,24 @@ class LoadSerializer(serializers.ModelSerializer):
     """
     مُسلسل الأحمال الكهربائية
     يقوم هذا المُسلسل بتحويل بيانات الأحمال من وإلى النموذج
-    ويتضمن تفاصيل اللوحة المغذية والقاطع المغذي
+    ويتضمن تفاصيل اللوحة المغذية والقاطع المغذي ونوع الحمل
     """
     # إضافة تفاصيل اللوحة المغذية للعرض فقط
     panel_details = serializers.SerializerMethodField()
     
     # إضافة تفاصيل القاطع المغذي للعرض فقط
     breaker_details = CircuitBreakerSerializer(source='breaker', read_only=True)
+    
+    # إضافة اسم نوع الحمل للعرض
+    load_type_display = serializers.SerializerMethodField()
+    
+    # إضافة حقل لمسار الحمل الكامل من المصدر إلى الحمل
+    total_path = serializers.SerializerMethodField()
+    
+    # إضافة حقول محسوبة
+    daily_consumption = serializers.SerializerMethodField()
+    monthly_cost = serializers.SerializerMethodField()
+    voltage_drop = serializers.SerializerMethodField()
     
     class Meta:
         model = Load  # النموذج المرتبط
@@ -267,3 +278,33 @@ class LoadSerializer(serializers.ModelSerializer):
                 'panel_type': obj.panel.panel_type
             }
         return None
+    
+    def get_load_type_display(self, obj):
+        """
+        إرجاع اسم نوع الحمل من الخيارات المعرفة
+        """
+        return obj.get_load_type_display()
+    
+    def get_total_path(self, obj):
+        """
+        إرجاع المسار الكامل للحمل من المصدر
+        """
+        return obj.get_total_path()
+    
+    def get_daily_consumption(self, obj):
+        """
+        إرجاع الاستهلاك اليومي المقدر للحمل
+        """
+        return obj.calculate_daily_consumption()
+    
+    def get_monthly_cost(self, obj):
+        """
+        إرجاع التكلفة الشهرية المقدرة للحمل
+        """
+        return obj.calculate_monthly_cost()
+    
+    def get_voltage_drop(self, obj):
+        """
+        إرجاع هبوط الجهد في كابل الحمل
+        """
+        return obj.calculate_voltage_drop()
