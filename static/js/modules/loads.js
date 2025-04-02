@@ -8,6 +8,7 @@ import { CircuitBreakerAPI, LoadAPI } from '../api_endpoints.js';
 
 // تهيئة المتغيرات
 let selectedBreakerId = null;
+let loadBeingEdited = null; // لتخزين معلومات الحمل الذي يتم تعديله
 
 // تهيئة الصفحة عند التحميل
 document.addEventListener('DOMContentLoaded', function() {
@@ -44,8 +45,7 @@ function setupEventListeners() {
         loadLoads(selectedBreakerId);
         
         // تفعيل/تعطيل زر إضافة حمل
-        const addLoadBtn = document.getElementById('add-load-btn');
-        addLoadBtn.disabled = !selectedBreakerId;
+        updateAddLoadButtonState();
     });
     
     // فلترة الأحمال حسب النوع
@@ -54,16 +54,32 @@ function setupEventListeners() {
     });
     
     // إضافة حمل جديد
-    document.getElementById('add-load-btn').addEventListener('click', showAddLoadModal);
+    document.getElementById('add-load-btn').addEventListener('click', () => showLoadModal());
     document.getElementById('save-load-btn').addEventListener('click', saveLoad);
     
-    // حساب استهلاك الطاقة تلقائيًا عند تغيير الأمبير أو الجهد
+    // حساب استهلاك الطاقة تلقائيًا عند تغيير الأمبير أو الجهد أو معامل القدرة
     document.getElementById('load-ampacity').addEventListener('input', calculatePowerConsumption);
     document.getElementById('load-voltage').addEventListener('change', calculatePowerConsumption);
     document.getElementById('load-power-factor').addEventListener('input', calculatePowerConsumption);
     
     // زر تأكيد الحذف
     document.getElementById('confirm-delete-btn').addEventListener('click', confirmDelete);
+    
+    // إعادة ضبط النموذج عند إغلاق المودال
+    const loadModal = document.getElementById('addLoadModal');
+    if (loadModal) {
+        loadModal.addEventListener('hidden.bs.modal', resetLoadForm);
+    }
+}
+
+/**
+ * تحديث حالة زر إضافة حمل
+ */
+function updateAddLoadButtonState() {
+    const addLoadBtn = document.getElementById('add-load-btn');
+    if (addLoadBtn) {
+        addLoadBtn.disabled = !selectedBreakerId;
+    }
 }
 
 /**
@@ -93,6 +109,11 @@ function calculatePowerConsumption() {
  */
 function showAlert(message, type = 'success') {
     const alertsContainer = document.getElementById('alerts-container');
+    if (!alertsContainer) {
+        console.error('لم يتم العثور على حاوية التنبيهات');
+        return;
+    }
+    
     const alertId = `alert-${Date.now()}`;
     
     const alertHTML = `
@@ -137,29 +158,41 @@ async function loadBreakersDropdown() {
  */
 function updateBreakersDropdown(breakers) {
     const dropdown = document.getElementById('load-filter-breaker');
+    const modalDropdown = document.getElementById('load-breaker-id');
     
-    // الحفاظ على خيار "الكل" في المقدمة
+    if (!dropdown) {
+        console.error('لم يتم العثور على قائمة القواطع المنسدلة');
+        return;
+    }
+    
+    // الحفاظ على خيار "الكل" في المقدمة للقائمة المنسدلة الرئيسية
     let options = '<option value="">كل القواطع</option>';
     
-    breakers.forEach(breaker => {
+    // إنشاء خيارات القواطع
+    const breakerOptions = breakers.map(breaker => {
         // إضافة معلومات اللوحة إلى اسم القاطع لتسهيل التمييز
         const panelName = breaker.panel_details ? ` (${breaker.panel_details.name})` : '';
         const breakerText = `${breaker.name || `قاطع #${breaker.id}`}${panelName}`;
         
         const selected = selectedBreakerId && selectedBreakerId == breaker.id ? 'selected' : '';
-        options += `<option value="${breaker.id}" ${selected}>${breakerText}</option>`;
-    });
+        return `<option value="${breaker.id}" ${selected}>${breakerText}</option>`;
+    }).join('');
     
-    dropdown.innerHTML = options;
+    // إضافة الخيارات للقائمة المنسدلة الرئيسية
+    dropdown.innerHTML = options + breakerOptions;
     
-    // تفعيل زر إضافة حمل إذا تم تحديد قاطع
-    const addLoadBtn = document.getElementById('add-load-btn');
-    addLoadBtn.disabled = !selectedBreakerId;
-    
-    // تحديث القائمة المنسدلة إذا تم تحديد قاطع من خلال الـ URL
-    if (selectedBreakerId) {
-        dropdown.value = selectedBreakerId;
+    // إضافة الخيارات للقائمة المنسدلة في المودال (إذا وجدت)
+    if (modalDropdown) {
+        modalDropdown.innerHTML = breakerOptions;
+        
+        // تحديد القاطع المختار في المودال
+        if (selectedBreakerId) {
+            modalDropdown.value = selectedBreakerId;
+        }
     }
+    
+    // تحديث حالة زر إضافة حمل
+    updateAddLoadButtonState();
 }
 
 /**
@@ -169,13 +202,17 @@ function updateBreakersDropdown(breakers) {
 async function loadLoads(breakerId = null) {
     try {
         const tableBody = document.getElementById('loads-table-body');
-        tableBody.innerHTML = '<tr><td colspan="8" class="text-center">جاري التحميل... <div class="loading-spinner"></div></td></tr>';
+        if (!tableBody) {
+            console.error('لم يتم العثور على جدول الأحمال');
+            return;
+        }
+        
+        tableBody.innerHTML = '<tr><td colspan="9" class="text-center">جاري التحميل... <div class="loading-spinner"></div></td></tr>';
         
         let result;
         
         if (breakerId) {
             // تحميل الأحمال المرتبطة بقاطع محدد
-            // استخدام circuitbreakers بدلاً من breakers للتوافق مع المسارات في urls.py
             result = await CircuitBreakerAPI.getLoads(breakerId);
         } else {
             // تحميل جميع الأحمال
@@ -185,13 +222,15 @@ async function loadLoads(breakerId = null) {
         if (result.success) {
             updateLoadsTable(result.data);
         } else {
-            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">حدث خطأ أثناء تحميل البيانات</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">حدث خطأ أثناء تحميل البيانات</td></tr>';
             showAlert(`فشل تحميل الأحمال: ${result.error.message}`, 'danger');
         }
     } catch (error) {
         console.error('خطأ في تحميل الأحمال:', error);
-        document.getElementById('loads-table-body').innerHTML = 
-            '<tr><td colspan="8" class="text-center text-danger">حدث خطأ غير متوقع</td></tr>';
+        const tableBody = document.getElementById('loads-table-body');
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">حدث خطأ غير متوقع</td></tr>';
+        }
         showAlert('حدث خطأ غير متوقع أثناء تحميل الأحمال', 'danger');
     }
 }
@@ -202,6 +241,10 @@ async function loadLoads(breakerId = null) {
  */
 function updateLoadsTable(loads) {
     const tableBody = document.getElementById('loads-table-body');
+    if (!tableBody) {
+        console.error('لم يتم العثور على جدول الأحمال');
+        return;
+    }
     
     if (loads.length === 0) {
         tableBody.innerHTML = '<tr><td colspan="9" class="text-center">لا توجد أحمال مسجلة</td></tr>';
@@ -219,25 +262,10 @@ function updateLoadsTable(loads) {
         const loadType = load.load_type_display || 'غير محدد';
         
         // حساب الطاقة إذا لم تكن محددة
-        const powerConsumption = load.power_consumption || (load.voltage * load.ampacity).toFixed(0);
+        const powerConsumption = load.power_consumption || (load.voltage * load.ampacity * (load.power_factor || 0.85)).toFixed(0);
         
         // إضافة الأيقونة المناسبة لنوع الحمل
-        let typeIcon = '';
-        switch(load.load_type) {
-            case 'machine': typeIcon = 'fa-cogs'; break;
-            case 'service_panel': typeIcon = 'fa-table-cells'; break;
-            case 'outlet': typeIcon = 'fa-plug'; break;
-            case 'lighting': typeIcon = 'fa-lightbulb'; break;
-            case 'fan': typeIcon = 'fa-fan'; break;
-            case 'screen': typeIcon = 'fa-desktop'; break;
-            case 'exhaust': typeIcon = 'fa-wind'; break;
-            case 'ac': typeIcon = 'fa-snowflake'; break;
-            case 'heater': typeIcon = 'fa-fire'; break;
-            case 'refrigerator': typeIcon = 'fa-temperature-low'; break;
-            case 'motor': typeIcon = 'fa-gauge-high'; break;
-            case 'pump': typeIcon = 'fa-faucet'; break;
-            default: typeIcon = 'fa-question'; break;
-        }
+        let typeIcon = getLoadTypeIcon(load.load_type);
         
         tableHTML += `
             <tr data-id="${load.id}" data-type="${load.load_type || ''}">
@@ -265,20 +293,48 @@ function updateLoadsTable(loads) {
     
     // إضافة مستمعي الأحداث للأزرار
     document.querySelectorAll('.edit-load').forEach(button => {
-        button.addEventListener('click', (e) => editLoad(e.target.closest('button').dataset.id));
+        button.addEventListener('click', (e) => {
+            const id = e.target.closest('button').dataset.id;
+            if (id) editLoad(id);
+        });
     });
     
     document.querySelectorAll('.delete-load').forEach(button => {
         button.addEventListener('click', (e) => {
             const btn = e.target.closest('button');
-            deleteLoad(btn.dataset.id, btn.dataset.name);
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            if (id && name) deleteLoad(id, name);
         });
     });
     
     // تطبيق الفلتر الحالي بعد تحديث الجدول
-    const currentFilter = document.getElementById('load-filter-type').value;
-    if (currentFilter) {
-        filterLoadsByType(currentFilter);
+    const currentFilter = document.getElementById('load-filter-type');
+    if (currentFilter && currentFilter.value) {
+        filterLoadsByType(currentFilter.value);
+    }
+}
+
+/**
+ * الحصول على أيقونة مناسبة لنوع الحمل
+ * @param {string} loadType - نوع الحمل
+ * @returns {string} - كلاس الأيقونة
+ */
+function getLoadTypeIcon(loadType) {
+    switch(loadType) {
+        case 'machine': return 'fa-cogs';
+        case 'service_panel': return 'fa-table-cells';
+        case 'outlet': return 'fa-plug';
+        case 'lighting': return 'fa-lightbulb';
+        case 'fan': return 'fa-fan';
+        case 'screen': return 'fa-desktop';
+        case 'exhaust': return 'fa-wind';
+        case 'ac': return 'fa-snowflake';
+        case 'heater': return 'fa-fire';
+        case 'refrigerator': return 'fa-temperature-low';
+        case 'motor': return 'fa-gauge-high';
+        case 'pump': return 'fa-faucet';
+        default: return 'fa-question';
     }
 }
 
@@ -288,6 +344,10 @@ function updateLoadsTable(loads) {
  */
 function filterLoadsByType(type) {
     const rows = document.querySelectorAll('#loads-table-body tr[data-id]');
+    
+    if (!rows.length) {
+        return;
+    }
     
     if (!type) {
         // إظهار جميع الصفوف إذا لم يتم تحديد نوع
@@ -306,7 +366,85 @@ function filterLoadsByType(type) {
 }
 
 /**
- * حفظ حمل جديد
+ * إظهار مودال إضافة/تعديل الحمل
+ * @param {Object} loadData - بيانات الحمل (اختياري، للتعديل)
+ */
+function showLoadModal(loadData = null) {
+    // تحديث عنوان المودال
+    const modalTitle = document.getElementById('addLoadModalLabel');
+    if (modalTitle) {
+        modalTitle.textContent = loadData ? 'تعديل حمل كهربائي' : 'إضافة حمل كهربائي جديد';
+    }
+    
+    // تعيين القاطع المحدد في المودال
+    const breakerDropdown = document.getElementById('load-breaker-id');
+    if (breakerDropdown) {
+        if (loadData && loadData.breaker) {
+            breakerDropdown.value = loadData.breaker;
+        } else if (selectedBreakerId) {
+            breakerDropdown.value = selectedBreakerId;
+        }
+    }
+    
+    // إذا كان هناك بيانات، ملء النموذج بها
+    if (loadData) {
+        loadBeingEdited = loadData;
+        populateLoadForm(loadData);
+    } else {
+        loadBeingEdited = null;
+    }
+    
+    // إظهار المودال
+    const modal = new bootstrap.Modal(document.getElementById('addLoadModal'));
+    modal.show();
+}
+
+/**
+ * ملء نموذج الحمل بالبيانات
+ * @param {Object} loadData - بيانات الحمل
+ */
+function populateLoadForm(loadData) {
+    document.getElementById('load-name').value = loadData.name || '';
+    document.getElementById('load-type').value = loadData.load_type || '';
+    document.getElementById('load-voltage').value = loadData.voltage || 220;
+    document.getElementById('load-ampacity').value = loadData.ampacity || '';
+    document.getElementById('load-power-factor').value = loadData.power_factor || 0.85;
+    document.getElementById('load-power-consumption').value = loadData.power_consumption || '';
+    
+    // تعبئة الحقول الاختيارية إذا كانت متوفرة
+    if (loadData.cable_length) {
+        document.getElementById('load-cable-length').value = loadData.cable_length;
+    }
+    
+    if (loadData.estimated_usage_hours) {
+        document.getElementById('load-usage-hours').value = loadData.estimated_usage_hours;
+    }
+    
+    if (loadData.label) {
+        document.getElementById('load-label').value = loadData.label;
+    }
+    
+    if (loadData.description) {
+        document.getElementById('load-description').value = loadData.description;
+    }
+    
+    // حساب استهلاك الطاقة تلقائيًا
+    calculatePowerConsumption();
+}
+
+/**
+ * إعادة ضبط نموذج الحمل
+ */
+function resetLoadForm() {
+    const form = document.getElementById('add-load-form');
+    if (form) {
+        form.reset();
+        loadBeingEdited = null;
+    }
+}
+
+/**
+ * حفظ حمل (جديد أو تعديل حمل موجود)
  */
 async function saveLoad() {
     // جمع البيانات من النموذج
@@ -361,87 +499,64 @@ async function saveLoad() {
     }
     
     try {
-        // إرسال البيانات للخادم
-        const result = await CircuitBreakerAPI.addLoad(breakerId, loadData);
+        let result;
+        
+        if (loadBeingEdited) {
+            // تحديث حمل موجود
+            result = await LoadAPI.update(loadBeingEdited.id, loadData);
+        } else {
+            // إضافة حمل جديد
+            result = await CircuitBreakerAPI.addLoad(breakerId, loadData);
+        }
         
         if (result.success) {
             // إغلاق المودال
             const modal = bootstrap.Modal.getInstance(document.getElementById('addLoadModal'));
-            modal.hide();
-            
-            // مسح البيانات من النموذج
-            document.getElementById('add-load-form').reset();
+            if (modal) {
+                modal.hide();
+            }
             
             // إظهار رسالة نجاح
-            showAlert('تم إضافة الحمل بنجاح');
+            showAlert(loadBeingEdited ? 'تم تحديث الحمل بنجاح' : 'تم إضافة الحمل بنجاح');
             
             // إعادة تحميل البيانات
-            await loadLoads(breakerId);
-        } else {
-            showAlert(`فشل إضافة الحمل: ${result.error.message}`, 'danger');
-        }
-    } catch (error) {
-        console.error('خطأ في إضافة الحمل:', error);
-        showAlert('حدث خطأ غير متوقع أثناء إضافة الحمل', 'danger');
-    }
-}
-
-/**
- * تعديل حمل (للتنفيذ لاحقاً)
- * @param {number} id - معرف الحمل
- */
-async function editLoad(id) {
-    alert(`سيتم تنفيذ وظيفة تعديل الحمل ذو المعرف ${id} لاحقاً`);
-}
-
-/**
- * طلب حذف حمل
- * @param {number} id - معرف الحمل
- * @param {string} name - اسم الحمل
- */
-function deleteLoad(id, name) {
-    // تخزين معرف العنصر المراد حذفه للاستخدام لاحقاً
-    window.deleteItemId = id;
-    
-    // تحديث نص مودال التأكيد
-    document.getElementById('delete-item-name').textContent = `الحمل "${name}"`;
-    
-    // إظهار مودال التأكيد
-    const confirmModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-    confirmModal.show();
-}
-
-/**
- * تنفيذ حذف الحمل بعد التأكيد
- */
-async function confirmDelete() {
-    const id = window.deleteItemId;
-    
-    // إغلاق المودال
-    const modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
-    modal.hide();
-    
-    try {
-        const result = await LoadAPI.delete(id);
-        
-        if (result.success) {
-            showAlert('تم حذف الحمل بنجاح');
             await loadLoads(selectedBreakerId);
         } else {
-            showAlert(`فشل حذف الحمل: ${result.error.message}`, 'danger');
+            showAlert(`فشل ${loadBeingEdited ? 'تحديث' : 'إضافة'} الحمل: ${result.error.message}`, 'danger');
         }
     } catch (error) {
-        console.error('خطأ في حذف الحمل:', error);
-        showAlert('حدث خطأ غير متوقع أثناء حذف الحمل', 'danger');
+        console.error(`خطأ في ${loadBeingEdited ? 'تحديث' : 'إضافة'} الحمل:`, error);
+        showAlert(`حدث خطأ غير متوقع أثناء ${loadBeingEdited ? 'تحديث' : 'إضافة'} الحمل`, 'danger');
     }
 }
 
 /**
- * تعديل حمل (للتنفيذ لاحقاً)
+ * تحرير حمل موجود
  * @param {number} id - معرف الحمل
  */
 async function editLoad(id) {
-    alert(`سيتم تنفيذ وظيفة تعديل الحمل ذو المعرف ${id} لاحقاً`);
+    if (!id) return;
+    
+    try {
+        // عرض مؤشر التحميل
+        showAlert('جاري تحميل بيانات الحمل...', 'info');
+        
+        // جلب بيانات الحمل من الخادم
+        const result = await LoadAPI.getById(id);
+        
+        if (result.success) {
+            // إزالة تنبيه التحميل
+            document.querySelectorAll('.alert-info').forEach(el => el.remove());
+            
+            // فتح المودال مع بيانات الحمل
+            showLoadModal(result.data);
+        } else {
+            showAlert(`فشل تحميل بيانات الحمل: ${result.error.message}`, 'danger');
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل بيانات الحمل:', error);
+        showAlert('حدث خطأ غير متوقع أثناء تحميل بيانات الحمل', 'danger');
+    }
 }
 
 /**
@@ -450,11 +565,16 @@ async function editLoad(id) {
  * @param {string} name - اسم الحمل
  */
 function deleteLoad(id, name) {
-    // تخزين معرف العنصر المراد حذفه للاستخدام لاحقاً
+    if (!id) return;
+    
+    // تخزين معرف العنصر المراد حذفه للاستخدام لاحقًا
     window.deleteItemId = id;
     
     // تحديث نص مودال التأكيد
-    document.getElementById('delete-item-name').textContent = `الحمل "${name}"`;
+    const deleteItemName = document.getElementById('delete-item-name');
+    if (deleteItemName) {
+        deleteItemName.textContent = `الحمل "${name}"`;
+    }
     
     // إظهار مودال التأكيد
     const confirmModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
@@ -466,10 +586,13 @@ function deleteLoad(id, name) {
  */
 async function confirmDelete() {
     const id = window.deleteItemId;
+    if (!id) return;
     
     // إغلاق المودال
     const modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
-    modal.hide();
+    if (modal) {
+        modal.hide();
+    }
     
     try {
         const result = await LoadAPI.delete(id);
