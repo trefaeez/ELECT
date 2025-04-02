@@ -62,7 +62,13 @@
                     <option value="">كل مصادر الطاقة</option>
                     <!-- سيتم إضافة الخيارات ديناميكياً -->
                 </select>
-                <button class="btn btn-success" id="add-panel-btn" disabled>
+                <select id="panel-filter-type" class="form-select d-inline-block me-2" style="width: auto;">
+                    <option value="">كل أنواع اللوحات</option>
+                    <option value="main">لوحات رئيسية</option>
+                    <option value="sub_main">لوحات رئيسية فرعية</option>
+                    <option value="sub">لوحات فرعية</option>
+                </select>
+                <button class="btn btn-success" id="add-panel-btn">
                     <i class="fas fa-plus"></i> إضافة لوحة
                 </button>
             </div>
@@ -70,11 +76,29 @@
 
         <!-- وصف للصفحة -->
         <div class="alert alert-info mb-4">
-            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة اللوحات الكهربائية. يمكنك تصفية اللوحات حسب مصدر الطاقة، وإضافة لوحات جديدة، والانتقال إلى القواطع المرتبطة بكل لوحة.
+            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة اللوحات الكهربائية. يمكنك تصفية اللوحات حسب مصدر الطاقة ونوع اللوحة، وإضافة لوحات جديدة، وتنظيم الهيكل الشجري للوحات.
         </div>
+
+        <!-- قسم هيكل اللوحات الشجري -->
+        <section class="mb-5">
+            <h3 class="mb-3"><i class="fas fa-project-diagram text-success"></i> هيكل اللوحات</h3>
+            <div class="card">
+                <div class="card-body">
+                    <div id="panels-tree-view" class="tree-view">
+                        <!-- سيتم إضافة العناصر ديناميكياً -->
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-success" role="status">
+                                <span class="visually-hidden">جاري التحميل...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- قسم اللوحات -->
         <section class="mb-5">
+            <h3 class="mb-3"><i class="fas fa-server text-success"></i> قائمة اللوحات</h3>
             <!-- جدول اللوحات -->
             <div class="table-responsive">
                 <table class="table table-bordered table-hover">
@@ -84,15 +108,20 @@
                             <th>الاسم</th>
                             <th>النوع</th>
                             <th>الجهد</th>
-                            <th>مصدر الطاقة</th>
-                            <th>اللوحة الأم</th>
+                            <th>الأمبير</th>
+                            <th>مصدر التغذية</th>
+                            <th>المسار الكامل</th>
                             <th>الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody id="panels-table-body">
                         <!-- سيتم إضافة الصفوف ديناميكياً من خلال JavaScript -->
                         <tr>
-                            <td colspan="7" class="text-center">يرجى اختيار مصدر طاقة أو انتظار تحميل البيانات...</td>
+                            <td colspan="8" class="text-center">
+                                <div class="spinner-border text-success" role="status">
+                                    <span class="visually-hidden">جاري التحميل...</span>
+                                </div>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -107,7 +136,7 @@
 
     <!-- مودال إضافة لوحة جديدة -->
     <div class="modal fade" id="addPanelModal" tabindex="-1" aria-labelledby="addPanelModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addPanelModalLabel">إضافة لوحة جديدة</h5>
@@ -115,32 +144,220 @@
                 </div>
                 <div class="modal-body">
                     <form id="add-panel-form">
-                        <input type="hidden" id="panel-power-source-id">
-                        <div class="mb-3">
-                            <label for="panel-name" class="form-label">اسم اللوحة <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="panel-name" required>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="panel-name" class="form-label">اسم اللوحة <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="panel-name" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="panel-type" class="form-label">نوع اللوحة <span class="text-danger">*</span></label>
+                                <select class="form-select" id="panel-type" required>
+                                    <option value="main">لوحة رئيسية</option>
+                                    <option value="sub_main">لوحة رئيسية فرعية</option>
+                                    <option value="sub">لوحة فرعية</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="panel-voltage" class="form-label">الجهد الكهربائي <span class="text-danger">*</span></label>
-                            <select class="form-select" id="panel-voltage" required>
-                                <option value="220">220 فولت</option>
-                                <option value="380">380 فولت</option>
-                                <option value="11KV">11 كيلو فولت</option>
-                                <option value="24">24 فولت</option>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="panel-voltage" class="form-label">الجهد الكهربائي <span class="text-danger">*</span></label>
+                                <select class="form-select" id="panel-voltage" required>
+                                    <option value="220">220 فولت</option>
+                                    <option value="380">380 فولت</option>
+                                    <option value="11KV">11 كيلو فولت</option>
+                                    <option value="24">24 فولت</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="panel-ampacity" class="form-label">الأمبير الكلي <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="panel-ampacity" min="0" required>
+                            </div>
+                        </div>
+                        
+                        <!-- حقول مصدر الطاقة أو اللوحة الأم -->
+                        <div class="mb-3" id="power-source-section">
+                            <label for="panel-power-source" class="form-label">مصدر الطاقة <span class="text-danger">*</span></label>
+                            <select class="form-select" id="panel-power-source">
+                                <option value="">-- اختر مصدر الطاقة --</option>
+                                <!-- سيتم إضافة الخيارات ديناميكياً -->
                             </select>
+                            <div class="form-text">مطلوب للوحات الرئيسية فقط</div>
                         </div>
+                        
+                        <div class="mb-3" id="parent-panel-section" style="display: none;">
+                            <label for="panel-parent" class="form-label">اللوحة الأم <span class="text-danger">*</span></label>
+                            <select class="form-select" id="panel-parent">
+                                <option value="">-- اختر اللوحة الأم --</option>
+                                <!-- سيتم إضافة الخيارات ديناميكياً -->
+                            </select>
+                            <div class="form-text">مطلوب للوحات الفرعية والرئيسية الفرعية</div>
+                        </div>
+                        
+                        <div class="mb-3" id="feeder-breaker-section" style="display: none;">
+                            <label for="panel-feeder-breaker" class="form-label">القاطع المغذي <span class="text-danger">*</span></label>
+                            <select class="form-select" id="panel-feeder-breaker">
+                                <option value="">-- اختر القاطع المغذي --</option>
+                                <!-- سيتم إضافة الخيارات ديناميكياً بعد اختيار اللوحة الأم -->
+                            </select>
+                            <div class="form-text">القاطع الذي يغذي هذه اللوحة في اللوحة الأم</div>
+                        </div>
+                        
+                        <!-- حقول لبيانات الكابل المغذي -->
+                        <div class="accordion mb-3" id="cableAccordion">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="headingCable">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                        data-bs-target="#collapseCable" aria-expanded="false" aria-controls="collapseCable">
+                                        بيانات الكابل المغذي
+                                    </button>
+                                </h2>
+                                <div id="collapseCable" class="accordion-collapse collapse" 
+                                    aria-labelledby="headingCable" data-bs-parent="#cableAccordion">
+                                    <div class="accordion-body">
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <label for="panel-cable-material" class="form-label">مادة الكابل</label>
+                                                <select class="form-select" id="panel-cable-material">
+                                                    <option value="copper">نحاس</option>
+                                                    <option value="aluminum">ألومنيوم</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="panel-cable-quantity" class="form-label">عدد الكابلات</label>
+                                                <input type="number" class="form-control" id="panel-cable-quantity" min="1" value="1">
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <label for="panel-cable-cross-section" class="form-label">مساحة مقطع الكابل (ملم²)</label>
+                                                <select class="form-select" id="panel-cable-cross-section">
+                                                    <option value="1.5">1.5 ملم²</option>
+                                                    <option value="2.5">2.5 ملم²</option>
+                                                    <option value="4">4 ملم²</option>
+                                                    <option value="6">6 ملم²</option>
+                                                    <option value="10">10 ملم²</option>
+                                                    <option value="16">16 ملم²</option>
+                                                    <option value="25">25 ملم²</option>
+                                                    <option value="35">35 ملم²</option>
+                                                    <option value="50">50 ملم²</option>
+                                                    <option value="70">70 ملم²</option>
+                                                    <option value="95">95 ملم²</option>
+                                                    <option value="120">120 ملم²</option>
+                                                    <option value="150">150 ملم²</option>
+                                                    <option value="185">185 ملم²</option>
+                                                    <option value="240">240 ملم²</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="panel-neutral-cross-section" class="form-label">مساحة مقطع المحايد (ملم²)</label>
+                                                <select class="form-select" id="panel-neutral-cross-section">
+                                                    <option value="">نفس مقطع الكابل</option>
+                                                    <option value="1.5">1.5 ملم²</option>
+                                                    <option value="2.5">2.5 ملم²</option>
+                                                    <option value="4">4 ملم²</option>
+                                                    <option value="6">6 ملم²</option>
+                                                    <option value="10">10 ملم²</option>
+                                                    <option value="16">16 ملم²</option>
+                                                    <option value="25">25 ملم²</option>
+                                                    <option value="35">35 ملم²</option>
+                                                    <option value="50">50 ملم²</option>
+                                                    <option value="70">70 ملم²</option>
+                                                    <option value="95">95 ملم²</option>
+                                                    <option value="120">120 ملم²</option>
+                                                    <option value="150">150 ملم²</option>
+                                                    <option value="185">185 ملم²</option>
+                                                    <option value="240">240 ملم²</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <label for="panel-cable-length" class="form-label">طول الكابل (متر)</label>
+                                                <input type="number" class="form-control" id="panel-cable-length" min="0" value="0">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="panel-cable-path" class="form-label">مسار الكابل</label>
+                                                <select class="form-select" id="panel-cable-path">
+                                                    <option value="aerial">في الهواء</option>
+                                                    <option value="buried">مدفون</option>
+                                                    <option value="conduit">في أنابيب</option>
+                                                    <option value="tray">في مجاري كابلات</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="mb-3">
-                            <label for="panel-ampacity" class="form-label">الأمبير الكلي <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" id="panel-ampacity" min="0" required>
+                            <label for="panel-location" class="form-label">موقع اللوحة</label>
+                            <input type="text" class="form-control" id="panel-location">
                         </div>
-                        <div class="alert alert-info">
-                            سيتم ربط اللوحة تلقائيًا بمصدر الطاقة المحدد
+                        
+                        <div class="mb-3">
+                            <label for="panel-description" class="form-label">وصف إضافي</label>
+                            <textarea class="form-control" id="panel-description" rows="2"></textarea>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
                     <button type="button" class="btn btn-success" id="save-panel-btn">حفظ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- مودال تفاصيل اللوحة -->
+    <div class="modal fade" id="panelDetailsModal" tabindex="-1" aria-labelledby="panelDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="panelDetailsModalLabel">تفاصيل اللوحة</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="panel-details-content">
+                        <!-- سيتم إضافة المحتوى ديناميكياً -->
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-success" role="status">
+                                <span class="visually-hidden">جاري التحميل...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                    <a href="#" class="btn btn-success" id="goto-panel-btn">عرض صفحة اللوحة</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- مودال تعيين قاطع رئيسي للوحة -->
+    <div class="modal fade" id="setMainBreakerModal" tabindex="-1" aria-labelledby="setMainBreakerModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="setMainBreakerModalLabel">تعيين القاطع الرئيسي للوحة</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="main-breaker-panel-id">
+                    <div class="mb-3">
+                        <label for="panel-main-breaker" class="form-label">القاطع الرئيسي <span class="text-danger">*</span></label>
+                        <select class="form-select" id="panel-main-breaker" required>
+                            <option value="">-- اختر القاطع الرئيسي --</option>
+                            <!-- سيتم إضافة الخيارات ديناميكياً -->
+                        </select>
+                        <div class="form-text">اختر من قائمة القواطع المتوفرة في اللوحة</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-success" id="save-main-breaker-btn">حفظ</button>
                 </div>
             </div>
         </div>

@@ -1,6 +1,7 @@
 /**
  * api_endpoints.js
  * ملف يحتوي على دوال للتعامل مع نقاط نهاية API
+ * تم تحديثه ليدعم الهيكلية الشجرية للوحات وعلاقات التغذية المتعددة للقواطع
  */
 
 // الرابط الأساسي للـ API
@@ -150,6 +151,16 @@ export const PowerSourceAPI = {
      */
     addPanel: async function(id, data) {
         return await apiRequest(`${API_BASE_URL}/powersources/${id}/panels/`, 'POST', data);
+    },
+    
+    /**
+     * تعيين القاطع الرئيسي لمصدر الطاقة
+     * @param {number} id - معرف مصدر الطاقة
+     * @param {number} breakerId - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    setMainBreaker: async function(id, breakerId) {
+        return await apiRequest(`${API_BASE_URL}/powersources/${id}/set_main_breaker/`, 'POST', { breaker_id: breakerId });
     }
 };
 
@@ -219,6 +230,54 @@ export const PanelAPI = {
      */
     addBreaker: async function(id, data) {
         return await apiRequest(`${API_BASE_URL}/panels/${id}/breakers/`, 'POST', data);
+    },
+    
+    /**
+     * الحصول على اللوحات الفرعية المباشرة
+     * @param {number} id - معرف اللوحة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getChildPanels: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/panels/${id}/child_panels/`);
+    },
+    
+    /**
+     * إضافة لوحة فرعية جديدة
+     * @param {number} id - معرف اللوحة الأم
+     * @param {Object} data - بيانات اللوحة الفرعية
+     * @returns {Promise} وعد بالاستجابة
+     */
+    addChildPanel: async function(id, data) {
+        return await apiRequest(`${API_BASE_URL}/panels/${id}/child_panels/`, 'POST', data);
+    },
+    
+    /**
+     * الحصول على جميع اللوحات الفرعية (المباشرة وغير المباشرة)
+     * @param {number} id - معرف اللوحة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getAllChildPanels: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/panels/${id}/all_child_panels/`);
+    },
+    
+    /**
+     * تعيين القاطع الرئيسي للوحة
+     * @param {number} id - معرف اللوحة
+     * @param {number} breakerId - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    setMainBreaker: async function(id, breakerId) {
+        return await apiRequest(`${API_BASE_URL}/panels/${id}/set_main_breaker/`, 'POST', { breaker_id: breakerId });
+    },
+    
+    /**
+     * تعيين القاطع المغذي للوحة في اللوحة الأم
+     * @param {number} id - معرف اللوحة
+     * @param {number} breakerId - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    setFeederBreaker: async function(id, breakerId) {
+        return await apiRequest(`${API_BASE_URL}/panels/${id}/set_feeder_breaker/`, 'POST', { breaker_id: breakerId });
     }
 };
 
@@ -288,6 +347,70 @@ export const CircuitBreakerAPI = {
      */
     addLoad: async function(id, data) {
         return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/loads/`, 'POST', data);
+    },
+    
+    /**
+     * الحصول على القواطع التي تغذي هذا القاطع
+     * @param {number} id - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getFeedingBreakers: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/feeding_breakers/`);
+    },
+    
+    /**
+     * تحديث قائمة القواطع المغذية
+     * @param {number} id - معرف القاطع
+     * @param {Array} breakerIds - معرفات القواطع المغذية
+     * @returns {Promise} وعد بالاستجابة
+     */
+    updateFeedingBreakers: async function(id, breakerIds) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/feeding_breakers/`, 'PUT', { feeding_breakers: breakerIds });
+    },
+    
+    /**
+     * الحصول على القواطع التي يغذيها هذا القاطع
+     * @param {number} id - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getFedBreakers: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/fed_breakers/`);
+    },
+    
+    /**
+     * تصفية القواطع حسب اللوحة
+     * @param {number} panelId - معرف اللوحة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getByPanel: async function(panelId) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/by_panel/?panel_id=${panelId}`);
+    },
+    
+    /**
+     * تصفية القواطع حسب الدور
+     * @param {string} role - دور القاطع (main, sub_main, distribution)
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getByRole: async function(role) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/by_role/?role=${role}`);
+    },
+    
+    /**
+     * الحصول على المسار الكامل للقاطع
+     * @param {number} id - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getFullPath: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/full_path/`);
+    },
+    
+    /**
+     * حساب إجمالي الحمل على القاطع
+     * @param {number} id - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getTotalLoad: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/total_load/`);
     }
 };
 
@@ -338,5 +461,32 @@ export const LoadAPI = {
      */
     delete: async function(id) {
         return await apiRequest(`${API_BASE_URL}/loads/${id}/`, 'DELETE');
+    },
+    
+    /**
+     * تصفية الأحمال حسب اللوحة
+     * @param {number} panelId - معرف اللوحة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getByPanel: async function(panelId) {
+        return await apiRequest(`${API_BASE_URL}/loads/by_panel/?panel_id=${panelId}`);
+    },
+    
+    /**
+     * تصفية الأحمال حسب القاطع
+     * @param {number} breakerId - معرف القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getByBreaker: async function(breakerId) {
+        return await apiRequest(`${API_BASE_URL}/loads/by_breaker/?breaker_id=${breakerId}`);
+    },
+    
+    /**
+     * تصفية الأحمال حسب النوع
+     * @param {string} loadType - نوع الحمل
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getByType: async function(loadType) {
+        return await apiRequest(`${API_BASE_URL}/loads/by_type/?load_type=${loadType}`);
     }
 };

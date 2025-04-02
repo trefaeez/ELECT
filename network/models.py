@@ -1,5 +1,6 @@
 from django.db import models
 import math
+from django.core.exceptions import ValidationError
 
 # إنشاء فئة مساعدة لتخزين بيانات مقاطع الكابلات والمعاملات المشتركة
 class CableConstants:
@@ -154,11 +155,12 @@ class CableMixin:
         return base_capacity * path_factor * self.cable_quantity
 
 
-# تم تقديم نموذج CircuitBreaker ليتم استخدامه في PowerSource و Panel
+# تعديل نموذج CircuitBreaker ليدعم المتطلبات الجديدة
 class CircuitBreaker(models.Model):
     """
     نموذج موحد للقواطع الكهربائية
     يمكن أن يكون قاطع رئيسي أو قاطع توزيع
+    يدعم ربط القاطع بقواطع أخرى للتغذية المتعددة
     """
     POLES_CHOICES = [
         (1, '1 قطب'),
@@ -178,6 +180,7 @@ class CircuitBreaker(models.Model):
 
     BREAKER_ROLE_CHOICES = [
         ('main', 'قاطع رئيسي'),
+        ('sub_main', 'قاطع رئيسي فرعي'),
         ('distribution', 'قاطع توزيع'),
     ]
     
@@ -213,7 +216,7 @@ class CircuitBreaker(models.Model):
     breaker_role = models.CharField(
         max_length=20, 
         choices=BREAKER_ROLE_CHOICES,
-        help_text="دور القاطع (رئيسي أو توزيع)",
+        help_text="دور القاطع (رئيسي، رئيسي فرعي، أو توزيع)",
         default='distribution'
     )
     number_of_poles = models.IntegerField(
@@ -231,39 +234,101 @@ class CircuitBreaker(models.Model):
     label = models.CharField(max_length=100, help_text="وصف مختصر للقاطع (مثال: إنارة الطابق الأول)", blank=True, null=True)
     position = models.IntegerField(help_text="الموقع في اللوحة (الترتيب)", default=0)
     
-    # إضافة ارتباط مباشر باللوحة التي ينتمي إليها القاطع (إذا كان قاطع توزيع)
+    # إضافة ارتباط مباشر باللوحة التي ينتمي إليها القاطع
     panel = models.ForeignKey(
-        'Panel',  # استخدام اسم النموذج كنص لتجنب أخطاء التبعية الدائرية
+        'Panel',
         on_delete=models.CASCADE,
-        related_name='distribution_breakers',
+        related_name='breakers',
         help_text="اللوحة التي ينتمي إليها القاطع",
         null=True,
         blank=True
     )
     
+    # إضافة حقل جديد للقواطع المغذية لهذا القاطع (علاقة عديد لعديد)
+    # يمكن لقاطع أن يتغذى من عدة قواطع أخرى (في حالة الترحيل أو الأنظمة المعقدة)
+    feeding_breakers = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='fed_breakers',
+        blank=True,
+        help_text="القواطع التي تغذي هذا القاطع"
+    )
+
     def __str__(self):
         manufacturer_name = dict(self.MANUFACTURER_CHOICES).get(self.manufacturer, self.manufacturer)
         role_name = dict(self.BREAKER_ROLE_CHOICES).get(self.breaker_role)
         panel_name = f" - {self.panel.name}" if self.panel else ""
         return f"{manufacturer_name} - {self.breaker_type} {self.rated_current}A {self.number_of_poles}P" + (f" - {self.name}" if self.name else "") + f"{panel_name} ({role_name})"
     
+    def get_full_path(self):
+        """
+        الحصول على المسار الكامل للقاطع من خلال تتبع القواطع المغذية
+        """
+        path = [str(self)]
+        
+        # الحصول على القواطع المغذية بشكل متكرر
+        feeding_breakers = list(self.feeding_breakers.all())
+        visited = set([self.id])
+        
+        while feeding_breakers:
+            feeder = feeding_breakers.pop(0)
+            if feeder.id in visited:  # تجنب الدورات
+                continue
+                
+            visited.add(feeder.id)
+            path.insert(0, str(feeder))
+            
+            # إضافة المغذيات لهذا القاطع
+            for next_feeder in feeder.feeding_breakers.all():
+                if next_feeder.id not in visited:
+                    feeding_breakers.append(next_feeder)
+        
+        return " → ".join(path)
+    
+    def get_total_load(self):
+        """
+        حساب إجمالي الحمل على هذا القاطع (مجموع الأحمال المباشرة والقواطع المغذاة)
+        """
+        # حساب الأحمال المباشرة
+        direct_load = sum(load.ampacity for load in self.loads.all())
+        
+        # حساب أحمال القواطع المغذاة
+        fed_breakers_load = sum(breaker.rated_current for breaker in self.fed_breakers.all())
+        
+        return direct_load + fed_breakers_load
+    
+    def clean(self):
+        """
+        التحقق من صحة العلاقات والمعلومات
+        """
+        # منع الدارات المغلقة في علاقات التغذية
+        if self.id:  # للتحقق فقط إذا كان القاطع مخزنًا مسبقًا
+            # التحقق عند حفظ العلاقات من خلال علاقة many-to-many
+            # يتم إجراؤه في save_m2m في النموذج المرتبط
+            pass
+    
     def save(self, *args, **kwargs):
         """
         حفظ القاطع والتأكد من أن حالته متناسقة مع دوره
         """
-        # إذا كان قاطع رئيسي للوحة أو مصدر طاقة، فلا يجب أن يكون مرتبط بلوحة كقاطع توزيع
+        # التحقق من تناسق دور القاطع مع علاقاته
         if self.breaker_role == 'main':
-            # التحقق مما إذا كان مرتبط كقاطع رئيسي للوحة أو مصدر طاقة
-            is_main_breaker = hasattr(self, 'panel_as_main') or hasattr(self, 'power_source')
-            
-            # إذا لم يكن مرتبط كقاطع رئيسي ولكن دوره قاطع رئيسي، قم بإلغاء ارتباطه من أي لوحة
-            if not is_main_breaker and self.panel:
-                self.panel = None
+            # إذا كان قاطعًا رئيسيًا للوحة، يجب أن يكون مرتبطًا كقاطع رئيسي
+            if hasattr(self, 'panel_as_main') or hasattr(self, 'power_source'):
+                pass  # القاطع مرتبط بشكل صحيح
+            elif self.panel:
+                # تعيين هذا القاطع كقاطع رئيسي للوحة المرتبطة
+                panel = self.panel
+                if not panel.main_breaker:
+                    panel.main_breaker = self
+                    panel.save(update_fields=['main_breaker'])
         
         super().save(*args, **kwargs)
     
     class Meta:
         ordering = ['position']
+        verbose_name = "قاطع كهربائي"
+        verbose_name_plural = "القواطع الكهربائية"
 
 
 class PowerSource(models.Model, CableMixin):
@@ -361,14 +426,17 @@ class PowerSource(models.Model, CableMixin):
         super().save(*args, **kwargs)
 
 
+# تعديل نموذج Panel ليدعم الهيكلية الشجرية واللوحات الفرعية المتداخلة
 class Panel(models.Model, CableMixin):
     """
     نموذج موحد للوحات الكهربائية
-    يمكن أن تكون لوحة رئيسية أو لوحة فرعية
+    يدعم هيكلية شجرية حيث يمكن للوحة أن تحتوي على لوحات فرعية
+    ويمكن للوحة الفرعية أن تحتوي على لوحات فرعية أخرى بدورها
     """
     PANEL_TYPE_CHOICES = [
         ('main', 'لوحة رئيسية'),
-        ('sub', 'لوحة فرعية'),
+        ('sub_main', 'لوحة رئيسية فرعية'),  # لوحة فرعية لكن لها لوحات فرعية أخرى
+        ('sub', 'لوحة فرعية')  # لوحة فرعية نهائية
     ]
     
     VOLTAGE_CHOICES = [
@@ -394,9 +462,11 @@ class Panel(models.Model, CableMixin):
     panel_type = models.CharField(
         max_length=10, 
         choices=PANEL_TYPE_CHOICES,
-        help_text="نوع اللوحة (رئيسية أو فرعية)",
+        help_text="نوع اللوحة (رئيسية، رئيسية فرعية، أو فرعية)",
         default='main'
     )
+    
+    # مصدر الطاقة - يمكن أن يكون مصدر طاقة أو لوحة أخرى
     power_source = models.ForeignKey(
         PowerSource, 
         on_delete=models.CASCADE, 
@@ -405,29 +475,26 @@ class Panel(models.Model, CableMixin):
         null=True, 
         blank=True
     )
+    
+    # اللوحة الأم - علاقة ذاتية (self-relation) لبناء هيكل شجري
     parent_panel = models.ForeignKey(
         'self', 
         on_delete=models.CASCADE, 
-        related_name='sub_panels',
-        help_text="اللوحة الأم المغذية (في حالة اللوحة الفرعية)",
+        related_name='child_panels',
+        help_text="اللوحة الأم المغذية (للوحات الفرعية)",
         null=True, 
         blank=True
     )
+    
+    # القاطع المغذي في اللوحة الأم
     feeder_breaker = models.OneToOneField(
         CircuitBreaker,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='fed_panel',
-        help_text="القاطع المغذي للوحة في اللوحة الأم (في حالة اللوحة الفرعية)"
+        help_text="القاطع المغذي للوحة في اللوحة الأم (للوحات الفرعية)"
     )
-    voltage = models.CharField(
-        max_length=10, 
-        choices=VOLTAGE_CHOICES,
-        help_text="الجهد الكهربائي",
-        default='220'
-    )
-    ampacity = models.FloatField(help_text="الأمبير الكلي", default=0)
     
     # القاطع الرئيسي للوحة
     main_breaker = models.OneToOneField(
@@ -438,6 +505,15 @@ class Panel(models.Model, CableMixin):
         related_name='panel_as_main',
         help_text="القاطع العمومي للوحة"
     )
+    
+    voltage = models.CharField(
+        max_length=10, 
+        choices=VOLTAGE_CHOICES,
+        help_text="الجهد الكهربائي",
+        default='220'
+    )
+    
+    ampacity = models.FloatField(help_text="الأمبير الكلي", default=0)
     
     # بيانات الكابلات المغذية - حقول منفصلة
     cable_quantity = models.PositiveIntegerField(help_text="عدد الكابلات", default=1)
@@ -467,16 +543,103 @@ class Panel(models.Model, CableMixin):
         default='aerial'
     )
     
+    # معلومات إضافية
+    location = models.CharField(
+        max_length=200, 
+        help_text="موقع اللوحة", 
+        blank=True, 
+        null=True
+    )
+    
+    description = models.TextField(
+        help_text="وصف إضافي", 
+        blank=True, 
+        null=True
+    )
+    
     def __str__(self):
         panel_type_name = dict(self.PANEL_TYPE_CHOICES).get(self.panel_type)
-        return f"{self.name} ({panel_type_name})"
+        parent_info = f" ← {self.parent_panel.name}" if self.parent_panel else ""
+        return f"{self.name} ({panel_type_name}){parent_info}"
+    
+    def get_full_path(self):
+        """
+        الحصول على المسار الكامل للوحة من خلال تتبع اللوحات الأم
+        """
+        path = [self.name]
+        current_panel = self
+        
+        while current_panel.parent_panel:
+            current_panel = current_panel.parent_panel
+            path.insert(0, current_panel.name)
+            
+        # إذا كانت لوحة رئيسية، أضف مصدر الطاقة
+        if current_panel.power_source:
+            path.insert(0, current_panel.power_source.name)
+            
+        return " → ".join(path)
+    
+    def get_all_child_panels(self, include_indirect=True):
+        """
+        الحصول على جميع اللوحات الفرعية التابعة لهذه اللوحة
+        
+        Args:
+            include_indirect (bool): تضمين اللوحات الفرعية غير المباشرة (الأحفاد)
+        
+        Returns:
+            list: قائمة باللوحات الفرعية
+        """
+        direct_children = list(self.child_panels.all())
+        
+        if not include_indirect:
+            return direct_children
+            
+        all_children = direct_children.copy()
+        for child in direct_children:
+            all_children.extend(child.get_all_child_panels())
+            
+        return all_children
+    
+    def get_total_loads(self):
+        """
+        حساب إجمالي الأحمال المرتبطة باللوحة وبجميع لوحاتها الفرعية
+        
+        Returns:
+            tuple: (إجمالي الأمبير, عدد الأحمال)
+        """
+        # حساب الأحمال المباشرة
+        direct_load = sum(load.ampacity for load in self.loads.all())
+        direct_count = self.loads.count()
+        
+        # حساب أحمال اللوحات الفرعية
+        child_load = 0
+        child_count = 0
+        
+        for child_panel in self.child_panels.all():
+            cl, cc = child_panel.get_total_loads()
+            child_load += cl
+            child_count += cc
+            
+        return (direct_load + child_load, direct_count + child_count)
     
     def clean(self):
         """
-        التحقق من اتساق البيانات حسب نوع اللوحة
+        التحقق من اتساق العلاقات والبيانات
         """
-        from django.core.exceptions import ValidationError
-        
+        # منع الدارات المغلقة في الهيكل الشجري
+        if self.parent_panel:
+            # التحقق من أن اللوحة الأم ليست هي ذاتها أو لوحة فرعية من اللوحة الحالية
+            if self.parent_panel == self:
+                raise ValidationError("لا يمكن تعيين اللوحة كأم لنفسها")
+                
+            # التحقق من أن اللوحة الأم ليست فرعية من هذه اللوحة
+            parent = self.parent_panel
+            while parent:
+                if parent.parent_panel == self:
+                    raise ValidationError("يوجد دورة في هيكل اللوحات: اللوحة الأم هي أيضًا لوحة فرعية من هذه اللوحة")
+                parent = parent.parent_panel
+                
+        # التحقق من تناسق نوع اللوحة مع علاقاتها
         if self.panel_type == 'main':
             # اللوحة الرئيسية يجب أن تكون متصلة بمصدر طاقة وليس لوحة أم
             if not self.power_source:
@@ -484,28 +647,50 @@ class Panel(models.Model, CableMixin):
             if self.parent_panel:
                 raise ValidationError("اللوحة الرئيسية لا يمكن أن تكون متصلة بلوحة أم")
         else:
-            # اللوحة الفرعية يجب أن تكون متصلة بلوحة أم وليس مصدر طاقة مباشرة
+            # اللوحة الفرعية أو الرئيسية الفرعية يجب أن تكون متصلة بلوحة أم
             if not self.parent_panel:
                 raise ValidationError("اللوحة الفرعية يجب أن تكون متصلة بلوحة أم")
             if self.power_source:
                 raise ValidationError("اللوحة الفرعية لا يمكن أن تكون متصلة بمصدر طاقة مباشرة")
+        
+        # التحقق من أن اللوحة الفرعية العادية لا تحتوي على لوحات فرعية
+        if self.panel_type == 'sub' and self.child_panels.exists():
+            raise ValidationError("اللوحة الفرعية العادية لا يمكن أن تحتوي على لوحات فرعية. يجب تغيير نوعها إلى 'لوحة رئيسية فرعية'")
     
     def save(self, *args, **kwargs):
         """
-        حفظ نموذج اللوحة والتأكد من أن القاطع الرئيسي هو قاطع رئيسي
+        حفظ نموذج اللوحة والتأكد من ضبط العلاقات بشكل صحيح
         """
+        # التأكد من أن القاطع الرئيسي هو قاطع رئيسي وتحديث دوره
         if self.main_breaker and self.main_breaker.breaker_role != 'main':
             self.main_breaker.breaker_role = 'main'
-            self.main_breaker.save()
+            self.main_breaker.panel = self
+            self.main_breaker.save(update_fields=['breaker_role', 'panel'])
+        
+        # إذا كان القاطع المغذي في اللوحة الأم، تأكد من ضبط العلاقات بشكل صحيح
+        if self.feeder_breaker and self.parent_panel:
+            # تعيين اللوحة الأم للقاطع المغذي
+            if self.feeder_breaker.panel != self.parent_panel:
+                self.feeder_breaker.panel = self.parent_panel
+                self.feeder_breaker.save(update_fields=['panel'])
+            
+            # إضافة القاطع المغذي كمصدر تغذية للقاطع الرئيسي إذا وجد
+            if self.main_breaker:
+                self.main_breaker.feeding_breakers.add(self.feeder_breaker)
         
         # الحصول على الجهد من المصدر أو اللوحة الأم إذا لم يتم تحديده
         if not self.voltage:
             if self.panel_type == 'main' and self.power_source:
                 self.voltage = self.power_source.voltage
-            elif self.panel_type == 'sub' and self.parent_panel:
+            elif self.parent_panel:
                 self.voltage = self.parent_panel.voltage
         
         super().save(*args, **kwargs)
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name = "لوحة كهربائية"
+        verbose_name_plural = "اللوحات الكهربائية"
 
 
 class Load(models.Model, CableMixin):
