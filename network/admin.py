@@ -1,21 +1,32 @@
 from django.contrib import admin
 from .models import (
-    PowerSource, Panel, CircuitBreaker, PanelBreaker, Load
+    PowerSource, Panel, CircuitBreaker, Load
 )
 
-class PanelBreakerInline(admin.TabularInline):
-    model = PanelBreaker
+class BreakerInline(admin.TabularInline):
+    model = CircuitBreaker
     extra = 0
+    fk_name = 'panel'
+    fields = ('name', 'manufacturer', 'breaker_type', 'rated_current', 'number_of_poles', 'position', 'label')
+    verbose_name = "قاطع توزيع"
+    verbose_name_plural = "قواطع التوزيع"
 
 class LoadInline(admin.TabularInline):
     model = Load
     extra = 0
+    fields = ('name', 'voltage', 'ampacity', 'breaker', 'power_consumption')
+    verbose_name = "حمل"
+    verbose_name_plural = "الأحمال"
 
 @admin.register(CircuitBreaker)
 class CircuitBreakerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'manufacturer', 'breaker_type', 'breaker_role', 'number_of_poles', 'rated_current', 'short_circuit_current')
-    list_filter = ('manufacturer', 'breaker_type', 'breaker_role', 'number_of_poles')
+    list_display = ('name', 'manufacturer', 'breaker_type', 'breaker_role', 'number_of_poles', 'rated_current', 'panel_display')
+    list_filter = ('manufacturer', 'breaker_type', 'breaker_role', 'number_of_poles', 'panel')
     search_fields = ('name', 'model', 'label')
+    
+    def panel_display(self, obj):
+        return obj.panel.name if obj.panel else "-"
+    panel_display.short_description = "اللوحة"
 
 @admin.register(PowerSource)
 class PowerSourceAdmin(admin.ModelAdmin):
@@ -28,7 +39,7 @@ class PanelAdmin(admin.ModelAdmin):
     list_display = ('name', 'panel_type', 'get_source_or_parent', 'voltage', 'ampacity')
     list_filter = ('panel_type', 'voltage')
     search_fields = ('name',)
-    inlines = [PanelBreakerInline, LoadInline]
+    inlines = [BreakerInline, LoadInline]
     
     def get_source_or_parent(self, obj):
         if obj.panel_type == 'main':
@@ -42,9 +53,11 @@ class LoadAdmin(admin.ModelAdmin):
     list_display = ('name', 'panel', 'breaker', 'voltage', 'ampacity', 'power_consumption')
     list_filter = ('panel', 'voltage')
     search_fields = ('name',)
-
-@admin.register(PanelBreaker)
-class PanelBreakerAdmin(admin.ModelAdmin):
-    list_display = ('panel', 'breaker')
-    list_filter = ('panel',)
-    search_fields = ('breaker__name', 'breaker__label')
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """تخصيص عرض حقول القواطع ليعرض فقط القواطع المناسبة للوحة المحددة"""
+        if db_field.name == "breaker" and request.resolver_match.kwargs.get('object_id'):
+            load = self.get_object(request, request.resolver_match.kwargs.get('object_id'))
+            if load and load.panel:
+                kwargs["queryset"] = CircuitBreaker.objects.filter(panel=load.panel)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)

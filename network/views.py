@@ -5,14 +5,16 @@
 
 # استيراد مكتبة viewsets من Django REST framework لإنشاء واجهات API
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
 
 # استيراد النماذج المختلفة من ملف models.py
 from .models import (
     PowerSource,        # نموذج مصادر الطاقة (الشبكة المحلية، المولدات)
     Panel,              # نموذج موحد للوحات الكهربائية (رئيسية أو فرعية)
     Load,               # نموذج الأحمال الكهربائية
-    CircuitBreaker,     # نموذج قواطع الدارة الكهربائية
-    PanelBreaker        # نموذج الربط بين اللوحات والقواطع
+    CircuitBreaker      # نموذج قواطع الدارة الكهربائية
 )
 
 # استيراد المُسلسلات (Serializers) المختلفة من ملف serializers.py
@@ -20,8 +22,7 @@ from .serializers import (
     PowerSourceSerializer,     # مُسلسل مصادر الطاقة: يحول بيانات مصادر الطاقة من/إلى JSON
     PanelSerializer,           # مُسلسل اللوحات: يحول بيانات اللوحات من/إلى JSON
     LoadSerializer,            # مُسلسل الأحمال: يحول بيانات الأحمال الكهربائية من/إلى JSON
-    CircuitBreakerSerializer,  # مُسلسل قواطع الدارة: يحول بيانات القواطع من/إلى JSON
-    PanelBreakerSerializer     # مُسلسل ربط اللوحات بالقواطع: يحول بيانات العلاقة من/إلى JSON
+    CircuitBreakerSerializer   # مُسلسل قواطع الدارة: يحول بيانات القواطع من/إلى JSON
 )
 
 # الفئة المسؤولة عن عرض وإدارة مصادر الطاقة (PowerSource)
@@ -33,6 +34,16 @@ class PowerSourceViewSet(viewsets.ModelViewSet):
     queryset = PowerSource.objects.all()  # استعلام قاعدة البيانات لجلب جميع مصادر الطاقة
     serializer_class = PowerSourceSerializer  # فئة المُسلسل المستخدمة لتحويل البيانات
 
+    @action(detail=True, methods=['get'])
+    def panels(self, request, pk=None):
+        """
+        استعلام لجلب اللوحات الرئيسية المتصلة بمصدر الطاقة
+        """
+        source = self.get_object()
+        panels = Panel.objects.filter(power_source=source)
+        serializer = PanelSerializer(panels, many=True)
+        return Response(serializer.data)
+
 # الفئة المسؤولة عن عرض وإدارة اللوحات (Panel)
 class PanelViewSet(viewsets.ModelViewSet):
     """
@@ -41,6 +52,36 @@ class PanelViewSet(viewsets.ModelViewSet):
     """
     queryset = Panel.objects.all()  # استعلام قاعدة البيانات لجلب جميع اللوحات
     serializer_class = PanelSerializer  # فئة المُسلسل المستخدمة لتحويل البيانات
+
+    @action(detail=True, methods=['get'])
+    def breakers(self, request, pk=None):
+        """
+        استعلام لجلب جميع القواطع المتصلة باللوحة
+        """
+        panel = self.get_object()
+        breakers = CircuitBreaker.objects.filter(panel=panel)
+        serializer = CircuitBreakerSerializer(breakers, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def loads(self, request, pk=None):
+        """
+        استعلام لجلب جميع الأحمال المتصلة باللوحة
+        """
+        panel = self.get_object()
+        loads = Load.objects.filter(panel=panel)
+        serializer = LoadSerializer(loads, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def sub_panels(self, request, pk=None):
+        """
+        استعلام لجلب جميع اللوحات الفرعية المتصلة باللوحة
+        """
+        panel = self.get_object()
+        sub_panels = Panel.objects.filter(parent_panel=panel)
+        serializer = PanelSerializer(sub_panels, many=True)
+        return Response(serializer.data)
 
 # الفئة المسؤولة عن عرض وإدارة الأحمال (Load)
 class LoadViewSet(viewsets.ModelViewSet):
@@ -59,12 +100,13 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
     """
     queryset = CircuitBreaker.objects.all()  # استعلام قاعدة البيانات لجلب جميع قواطع الدارة
     serializer_class = CircuitBreakerSerializer  # فئة المُسلسل المستخدمة لتحويل البيانات
-
-# الفئة المسؤولة عن عرض وإدارة علاقات اللوحات والقواطع (PanelBreaker)
-class PanelBreakerViewSet(viewsets.ModelViewSet):
-    """
-    واجهة API للتعامل مع العلاقات بين اللوحات والقواطع
-    توفر هذه الواجهة عمليات القراءة، الإضافة، التعديل والحذف للعلاقات
-    """
-    queryset = PanelBreaker.objects.all()  # استعلام قاعدة البيانات لجلب جميع علاقات اللوحات والقواطع
-    serializer_class = PanelBreakerSerializer  # فئة المُسلسل المستخدمة لتحويل البيانات
+    
+    @action(detail=True, methods=['get'])
+    def loads(self, request, pk=None):
+        """
+        استعلام لجلب جميع الأحمال المتصلة بالقاطع
+        """
+        breaker = self.get_object()
+        loads = Load.objects.filter(breaker=breaker)
+        serializer = LoadSerializer(loads, many=True)
+        return Response(serializer.data)

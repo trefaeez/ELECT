@@ -154,7 +154,7 @@ class CableMixin:
         return base_capacity * path_factor * self.cable_quantity
 
 
-# نموذج موحد للقواطع (Circuit Breakers)
+# تم تقديم نموذج CircuitBreaker ليتم استخدامه في PowerSource و Panel
 class CircuitBreaker(models.Model):
     """
     نموذج موحد للقواطع الكهربائية
@@ -231,10 +231,36 @@ class CircuitBreaker(models.Model):
     label = models.CharField(max_length=100, help_text="وصف مختصر للقاطع (مثال: إنارة الطابق الأول)", blank=True, null=True)
     position = models.IntegerField(help_text="الموقع في اللوحة (الترتيب)", default=0)
     
+    # إضافة ارتباط مباشر باللوحة التي ينتمي إليها القاطع (إذا كان قاطع توزيع)
+    panel = models.ForeignKey(
+        'Panel',  # استخدام اسم النموذج كنص لتجنب أخطاء التبعية الدائرية
+        on_delete=models.CASCADE,
+        related_name='distribution_breakers',
+        help_text="اللوحة التي ينتمي إليها القاطع",
+        null=True,
+        blank=True
+    )
+    
     def __str__(self):
         manufacturer_name = dict(self.MANUFACTURER_CHOICES).get(self.manufacturer, self.manufacturer)
         role_name = dict(self.BREAKER_ROLE_CHOICES).get(self.breaker_role)
-        return f"{manufacturer_name} - {self.breaker_type} {self.rated_current}A {self.number_of_poles}P" + (f" - {self.name}" if self.name else "") + f" ({role_name})"
+        panel_name = f" - {self.panel.name}" if self.panel else ""
+        return f"{manufacturer_name} - {self.breaker_type} {self.rated_current}A {self.number_of_poles}P" + (f" - {self.name}" if self.name else "") + f"{panel_name} ({role_name})"
+    
+    def save(self, *args, **kwargs):
+        """
+        حفظ القاطع والتأكد من أن حالته متناسقة مع دوره
+        """
+        # إذا كان قاطع رئيسي للوحة أو مصدر طاقة، فلا يجب أن يكون مرتبط بلوحة كقاطع توزيع
+        if self.breaker_role == 'main':
+            # التحقق مما إذا كان مرتبط كقاطع رئيسي للوحة أو مصدر طاقة
+            is_main_breaker = hasattr(self, 'panel_as_main') or hasattr(self, 'power_source')
+            
+            # إذا لم يكن مرتبط كقاطع رئيسي ولكن دوره قاطع رئيسي، قم بإلغاء ارتباطه من أي لوحة
+            if not is_main_breaker and self.panel:
+                self.panel = None
+        
+        super().save(*args, **kwargs)
     
     class Meta:
         ordering = ['position']
@@ -441,14 +467,6 @@ class Panel(models.Model, CableMixin):
         default='aerial'
     )
     
-    # القواطع الفرعية
-    breakers = models.ManyToManyField(
-        CircuitBreaker,
-        through='PanelBreaker',
-        related_name='panels',
-        help_text="القواطع المتصلة باللوحة"
-    )
-
     def __str__(self):
         panel_type_name = dict(self.PANEL_TYPE_CHOICES).get(self.panel_type)
         return f"{self.name} ({panel_type_name})"
@@ -488,27 +506,6 @@ class Panel(models.Model, CableMixin):
                 self.voltage = self.parent_panel.voltage
         
         super().save(*args, **kwargs)
-
-
-class PanelBreaker(models.Model):
-    """
-    نموذج للربط بين اللوحات والقواطع
-    """
-    panel = models.ForeignKey(
-        Panel, 
-        on_delete=models.CASCADE, 
-        related_name='panel_breakers',
-        help_text="اللوحة التي ينتمي إليها القاطع"
-    )
-    breaker = models.ForeignKey(
-        CircuitBreaker,
-        on_delete=models.CASCADE,
-        related_name='breaker_panels',
-        help_text="القاطع المتصل باللوحة"
-    )
-    
-    def __str__(self):
-        return f"{self.panel.name} - {self.breaker}"
 
 
 class Load(models.Model, CableMixin):
@@ -612,15 +609,22 @@ class Load(models.Model, CableMixin):
     
     def save(self, *args, **kwargs):
         """
-        حفظ نموذج الحمل وضبط الجهد تلقائياً إذا لم يتم تحديده
+        حفظ نموذج الحمل وضبط الجهد تلقائياً إذا لم يتم تحديده وضمان اتساق العلاقات
         """
         # الحصول على الجهد من اللوحة إذا لم يتم تحديده
         if not self.voltage and self.panel:
             self.voltage = self.panel.voltage
             
-        # التأكد أن القاطع المحدد ينتمي للوحة المحددة
-        if self.breaker and not PanelBreaker.objects.filter(panel=self.panel, breaker=self.breaker).exists():
-            # إضافة القاطع للوحة إذا لم يكن موجوداً بها
-            PanelBreaker.objects.create(panel=self.panel, breaker=self.breaker)
-            
+        # التأكد أن القاطع المحدد ينتمي للوحة المحددة أو ضبط اللوحة تلقائياً
+        if self.breaker and self.panel:
+            # إذا لم يكن القاطع مرتبطًا بلوحة أو لوحته مختلفة
+            if self.breaker.panel is None:
+                self.breaker.panel = self.panel
+                self.breaker.save()
+            # إذا كان مرتبطًا بلوحة أخرى غير لوحة الحمل
+            elif self.breaker.panel != self.panel:
+                # حدث عدم اتساق، فنتخذ أحد الإجراءين:
+                # 1. ضبط لوحة الحمل لتطابق لوحة القاطع
+                self.panel = self.breaker.panel
+        
         super().save(*args, **kwargs)

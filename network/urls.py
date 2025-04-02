@@ -13,8 +13,7 @@ from .views import (
     PowerSourceViewSet,        # فئة عرض مصادر الطاقة (الشبكة المحلية، المولدات)
     PanelViewSet,              # فئة عرض اللوحات الكهربائية (رئيسية وفرعية)
     LoadViewSet,               # فئة عرض الأحمال الكهربائية
-    CircuitBreakerViewSet,     # فئة عرض قواطع الدارة الكهربائية
-    PanelBreakerViewSet        # فئة عرض العلاقات بين اللوحات والقواطع
+    CircuitBreakerViewSet      # فئة عرض قواطع الدارة الكهربائية
 )
 
 # دالة بسيطة للصفحة الرئيسية
@@ -38,7 +37,6 @@ router.register(r'powersources', PowerSourceViewSet)  # مسار مصادر ال
 router.register(r'panels', PanelViewSet)  # مسار اللوحات (رئيسية وفرعية)
 router.register(r'loads', LoadViewSet)  # مسار الأحمال
 router.register(r'circuitbreakers', CircuitBreakerViewSet)  # مسار قواطع الدارة
-router.register(r'panelbreakers', PanelBreakerViewSet)  # مسار العلاقات بين اللوحات والقواطع
 
 # تحديد قائمة المسارات النهائية للتطبيق
 urlpatterns = [

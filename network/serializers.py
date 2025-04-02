@@ -11,8 +11,7 @@ from .models import (
     PowerSource,        # نموذج مصادر الطاقة (الشبكة المحلية، المولدات)
     Panel,              # نموذج موحد للوحات الكهربائية (رئيسية أو فرعية)
     Load,               # نموذج الأحمال الكهربائية
-    CircuitBreaker,     # نموذج قواطع الدارة الكهربائية
-    PanelBreaker        # نموذج الربط بين اللوحات والقواطع
+    CircuitBreaker      # نموذج قواطع الدارة الكهربائية
 )
 
 # فئة المُسلسل الخاصة بقواطع الدارة (CircuitBreaker)
@@ -21,9 +20,15 @@ class CircuitBreakerSerializer(serializers.ModelSerializer):
     مُسلسل قواطع الدارة الكهربائية
     يقوم هذا المُسلسل بتحويل بيانات قواطع الدارة من وإلى النموذج
     """
+    panel_name = serializers.SerializerMethodField()
+
     class Meta:
         model = CircuitBreaker  # النموذج المرتبط
         fields = '__all__'  # تضمين جميع الحقول في المُسلسل
+    
+    def get_panel_name(self, obj):
+        """إرجاع اسم اللوحة التي ينتمي إليها القاطع (إن وجدت)"""
+        return obj.panel.name if obj.panel else None
 
 # فئة المُسلسل الخاصة بمصادر الطاقة (PowerSource)
 class PowerSourceSerializer(serializers.ModelSerializer):
@@ -39,19 +44,6 @@ class PowerSourceSerializer(serializers.ModelSerializer):
         model = PowerSource  # النموذج المرتبط
         fields = '__all__'  # تضمين جميع الحقول في المُسلسل
 
-# فئة المُسلسل الخاصة بعلاقة اللوحات والقواطع (PanelBreaker)
-class PanelBreakerSerializer(serializers.ModelSerializer):
-    """
-    مُسلسل لعلاقة اللوحات والقواطع
-    يقوم هذا المُسلسل بتحويل بيانات العلاقات بين اللوحات وقواطعها من وإلى النموذج
-    """
-    # إضافة تفاصيل القاطع للعرض فقط
-    breaker_details = CircuitBreakerSerializer(source='breaker', read_only=True)
-    
-    class Meta:
-        model = PanelBreaker  # النموذج المرتبط
-        fields = '__all__'  # تضمين جميع الحقول في المُسلسل
-
 # فئة المُسلسل الخاصة باللوحات (Panel)
 class PanelSerializer(serializers.ModelSerializer):
     """
@@ -62,8 +54,8 @@ class PanelSerializer(serializers.ModelSerializer):
     # إضافة تفاصيل القاطع الرئيسي للوحة للعرض فقط
     main_breaker_details = CircuitBreakerSerializer(source='main_breaker', read_only=True)
     
-    # إضافة تفاصيل القواطع الفرعية للوحة للعرض فقط
-    panel_breakers = PanelBreakerSerializer(source='panel_breakers', many=True, read_only=True)
+    # إضافة تفاصيل القواطع الفرعية/التوزيع للوحة للعرض فقط
+    distribution_breakers = serializers.SerializerMethodField()
     
     # إضافة تفاصيل القاطع المغذي للوحة (في حالة اللوحة الفرعية) للعرض فقط
     feeder_breaker_details = CircuitBreakerSerializer(source='feeder_breaker', read_only=True)
@@ -83,6 +75,21 @@ class PanelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Panel  # النموذج المرتبط
         fields = '__all__'  # تضمين جميع الحقول في المُسلسل
+    
+    def get_distribution_breakers(self, obj):
+        """
+        إرجاع معلومات قواطع التوزيع في اللوحة
+        """
+        breakers = obj.distribution_breakers.all()
+        return [
+            {
+                'id': breaker.id,
+                'name': breaker.name or f"{breaker.manufacturer} {breaker.breaker_type} {breaker.rated_current}A",
+                'rated_current': breaker.rated_current,
+                'number_of_poles': breaker.number_of_poles,
+                'label': breaker.label
+            } for breaker in breakers
+        ]
     
     def get_parent_panel_details(self, obj):
         """
