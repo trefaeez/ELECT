@@ -1,0 +1,435 @@
+فيما يلي البرومبوت النهائي بعد التعديل وإعادة التنظيم وفقًا للمتطلبات الجديدة، بحيث يكون لديك تنظيم واضح للمشروع مع فصل الباك إند (Django وواجهات API) عن الفرونت إند (نماذج الإدخال، الواجهة الرسومية ونظام التقارير) وصفحة الشبكة التفاعلية (المخطط) باستخدام GoJS. تم تضمين دعم التعديل والحذف لجميع العناصر، مع دمج تفاصيل "الكابلات" كجزء من معلمة connection_tool في كل نموذج، ودعم المعادلات الكهربائية المتقدمة.
+
+الهيكلية العامة للمشروع
+csharp
+نسخ
+project-root/
+│
+├── backend/                   # قسم الباك إند
+│   ├── venv/                  # البيئة الافتراضية (venv)
+│   ├── manage.py              # ملف إدارة Django
+│   ├── power_network_project/ # إعدادات المشروع
+│   │   ├── __init__.py
+│   │   ├── settings.py        # إعدادات المشروع (قاعدة البيانات، التطبيقات، إلخ)
+│   │   ├── urls.py            # ربط روابط API والـ admin
+│   │   └── wsgi.py
+│   └── network/               # التطبيق الفرعي "network"
+│       ├── __init__.py
+│       ├── models.py          # النماذج: PowerSource, MainPanel, SubPanel, Load
+│       ├── serializers.py     # تحويل النماذج إلى JSON
+│       ├── views.py           # ViewSets (دعم الإنشاء، التعديل والحذف)
+│       ├── urls.py            # روابط API الخاصة بالتطبيق
+│       └── tests.py           # اختبارات الوحدة (اختياري)
+│
+├── frontend/                  # قسم الفرونت إند
+│   ├── package.json           # إعدادات Node.js
+│   ├── public/                # ملفات HTML والموارد الثابتة
+│   └── src/
+│       ├── components/        # مكونات React
+│       │   ├── Forms/         # نماذج الإدخال (مثال: PowerSourceForm.jsx, MainPanelForm.jsx، إلخ)
+│       │   ├── Reports/       # نظام التقارير والجداول التفاعلية (مثال: ReportTable.jsx)
+│       │   └── Diagram/       # مكون صفحة المخطط التفاعلي (مثال: PowerNetworkDiagram.jsx)
+│       ├── App.js             # التطبيق الرئيسي ومسارات React Router
+│       └── index.js           # نقطة بداية التطبيق
+│
+└── README.md                  # توثيق المشروع وتعليمات التشغيل
+البرومبوت التفصيلي للمشروع
+القسم الأول: الباك إند وواجهات API باستخدام Django
+1. إعداد البيئة وتفعيل البيئة الافتراضية
+تثبيت Python: تأكد من تثبيت Python (يفضل الإصدار 3.8 أو أحدث).
+
+إنشاء البيئة الافتراضية باسم venv:
+
+nginx
+نسخ
+python -m venv venv
+تفعيل البيئة على Windows:
+
+نسخ
+.\venv\Scripts\activate
+(على Linux/macOS):
+
+bash
+نسخ
+source ./venv/bin/activate
+2. تثبيت الحزم الأساسية
+تثبيت Django:
+
+nginx
+نسخ
+pip install django
+تثبيت Django REST Framework:
+
+nginx
+نسخ
+pip install djangorestframework
+3. إنشاء مشروع وتطبيق Django
+إنشاء المشروع باسم power_network_project:
+
+pgsql
+نسخ
+django-admin startproject power_network_project
+الدخول إلى مجلد المشروع:
+
+bash
+نسخ
+cd power_network_project
+إنشاء تطبيق فرعي باسم network:
+
+nginx
+نسخ
+python manage.py startapp network
+4. إعداد الإعدادات (settings.py)
+إضافة التطبيقات "network" و "rest_framework" ضمن INSTALLED_APPS.
+
+إعداد قاعدة البيانات (يفضّل استخدام PostgreSQL) مع كتابة الإعدادات بشكل منفرد.
+
+5. تصميم نماذج البيانات (models.py) مع دمج تفاصيل "الكابلات" ومعادلات كهربائية متقدمة
+يُدمَج حقل connection_tool في كل نموذج لتحديد تفاصيل أداة التوصيل (الكابلات).
+
+نموذج PowerSource
+python
+نسخ
+from django.db import models
+import math
+
+class PowerSource(models.Model):
+    name = models.CharField(max_length=100)
+    voltage = models.FloatField(help_text="الجهد الكهربائي للمصدر بالفولت")
+    connection_tool = models.CharField(
+        max_length=50,
+        help_text="حدد نوع أداة التوصيل (الكابل) لمصدر الطاقة"
+    )
+    load_coefficient = models.FloatField(default=1.0, help_text="معامل تحميل المصدر")
+
+    def calculate_voltage_drop(self, current, cable_length, cable_resistance):
+        # معادلة حساب انخفاض الجهد: V_drop = I * R * L
+        return current * cable_resistance * cable_length
+
+    def __str__(self):
+        return self.name
+نماذج MainPanel و SubPanel
+python
+نسخ
+class MainPanel(models.Model):
+    name = models.CharField(max_length=100)
+    power_source = models.ForeignKey(
+        PowerSource, on_delete=models.CASCADE, related_name='main_panels'
+    )
+    connection_tool = models.CharField(
+        max_length=50,
+        help_text="حدد أداة التوصيل للوحة الرئيسية (نوع الكابل المستخدم)"
+    )
+
+    def __str__(self):
+        return self.name
+
+class SubPanel(models.Model):
+    name = models.CharField(max_length=100)
+    main_panel = models.ForeignKey(
+        MainPanel, on_delete=models.CASCADE, related_name='sub_panels'
+    )
+    connection_tool = models.CharField(
+        max_length=50,
+        help_text="حدد أداة التوصيل للوحة الفرعية"
+    )
+
+    def __str__(self):
+        return self.name
+نموذج Load (الحمل)
+python
+نسخ
+class Load(models.Model):
+    name = models.CharField(max_length=100)
+    sub_panel = models.ForeignKey(
+        SubPanel, on_delete=models.CASCADE, related_name='loads'
+    )
+    connection_tool = models.CharField(
+        max_length=50,
+        help_text="حدد أداة التوصيل للحمل (نوع الكابل المستخدم)"
+    )
+    power_consumption = models.FloatField(help_text="استهلاك الطاقة بالواط", default=0)
+
+    def calculate_power_loss(self, current, resistance):
+        # معادلة حساب فقدان الطاقة: P_loss = I^2 * R
+        return math.pow(current, 2) * resistance
+
+    def __str__(self):
+        return self.name
+6. مزامنة قاعدة البيانات
+إنشاء الترحيلات:
+
+nginx
+نسخ
+python manage.py makemigrations
+تطبيق الترحيلات:
+
+nginx
+نسخ
+python manage.py migrate
+7. إنشاء واجهات API باستخدام Django REST Framework
+أ. إنشاء ملفات Serializers (serializers.py)
+python
+نسخ
+from rest_framework import serializers
+from .models import PowerSource, MainPanel, SubPanel, Load
+
+class PowerSourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PowerSource
+        fields = '__all__'
+
+class MainPanelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MainPanel
+        fields = '__all__'
+
+class SubPanelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubPanel
+        fields = '__all__'
+
+class LoadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Load
+        fields = '__all__'
+ب. إنشاء Views وEndpoints (views.py)
+python
+نسخ
+from rest_framework import viewsets
+from .models import PowerSource, MainPanel, SubPanel, Load
+from .serializers import PowerSourceSerializer, MainPanelSerializer, SubPanelSerializer, LoadSerializer
+
+class PowerSourceViewSet(viewsets.ModelViewSet):
+    queryset = PowerSource.objects.all()
+    serializer_class = PowerSourceSerializer
+
+class MainPanelViewSet(viewsets.ModelViewSet):
+    queryset = MainPanel.objects.all()
+    serializer_class = MainPanelSerializer
+
+class SubPanelViewSet(viewsets.ModelViewSet):
+    queryset = SubPanel.objects.all()
+    serializer_class = SubPanelSerializer
+
+class LoadViewSet(viewsets.ModelViewSet):
+    queryset = Load.objects.all()
+    serializer_class = LoadSerializer
+ج. إعداد Routing للـ API (network/urls.py)
+python
+نسخ
+from django.urls import path, include
+from rest_framework import routers
+from .views import PowerSourceViewSet, MainPanelViewSet, SubPanelViewSet, LoadViewSet
+
+router = routers.DefaultRouter()
+router.register(r'powersources', PowerSourceViewSet)
+router.register(r'mainpanels', MainPanelViewSet)
+router.register(r'subpanels', SubPanelViewSet)
+router.register(r'loads', LoadViewSet)
+
+urlpatterns = [
+    path('api/', include(router.urls)),
+]
+ثم ربط هذا الملف في power_network_project/urls.py:
+
+python
+نسخ
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('network.urls')),
+]
+القسم الثاني: نماذج الإدخال والواجهة الرسومية ونظام التقارير باستخدام React
+1. إعداد بيئة التطوير للفرونت إند
+تثبيت Node.js و npm: تأكد من تثبيت الإصدار الأخير.
+
+إنشاء مشروع React باسم power-network-frontend:
+
+lua
+نسخ
+npx create-react-app power-network-frontend
+الدخول إلى مجلد المشروع:
+
+bash
+نسخ
+cd power-network-frontend
+2. تثبيت المكتبات المساعدة
+React Router: لإدارة التنقل بين الصفحات:
+
+nginx
+نسخ
+npm install react-router-dom
+Formik وYup: لإدارة نماذج الإدخال والتحقق من صحة البيانات:
+
+nginx
+نسخ
+npm install formik yup
+Material-UI: لتصميم واجهة المستخدم:
+
+nginx
+نسخ
+npm install @mui/material @emotion/react @emotion/styled
+Axios: للتواصل مع REST API:
+
+nginx
+نسخ
+npm install axios
+نظام التقارير والجداول الديناميكية: (مثال باستخدام ag-Grid)
+
+css
+نسخ
+npm install ag-grid-react ag-grid-community
+3. تصميم قوالب الإدخال (Templates) والواجهات الرسومية
+أ. صفحات الإدخال
+صفحة إدخال PowerSource:
+
+حقول: الاسم، الجهد الكهربائي، معلمة "أداة التوصيل".
+
+زر لحساب نتائج المعادلات (مثلاً حساب انخفاض الجهد).
+
+دعم التعديل والحذف عبر طلبات Axios.
+
+صفحة إدخال MainPanel وSubPanel:
+
+حقول: الاسم، اختيار المصدر أو اللوحة المرتبطة (يتم جلبها من API)، ومعلمة "أداة التوصيل".
+
+دعم التعديل والحذف.
+
+صفحة إدخال Load:
+
+حقول: الاسم، اختيار اللوحة الفرعية المرتبطة، معلمة "أداة التوصيل"، وحقل إدخال استهلاك الطاقة.
+
+دعم التعديل والحذف.
+
+ب. تنفيذ النماذج باستخدام Formik
+إنشاء مكونات منفصلة لكل نموذج باستخدام Formik للتحكم بالحالة، والتحقق من صحة البيانات باستخدام Yup.
+
+إرسال واستقبال البيانات عبر Axios، مع دعم إنشاء وتعديل وحذف السجلات.
+
+ج. نظام التقارير
+إنشاء صفحة تقارير تعرض جداول تفاعلية باستخدام ag-Grid أو Material-UI Table.
+
+يجب أن تعرض الجداول بيانات الكيانات (PowerSource، MainPanel، SubPanel، Load) مع إمكانية الفرز والتصفية.
+
+عرض النتائج الحسابية (مثل انخفاض الجهد وفقدان الطاقة) بجانب البيانات.
+
+دعم وظائف تعديل وحذف السجلات مباشرة من الجداول.
+
+القسم الثالث: صفحة الشبكة التفاعلية (صفحة المنتور) باستخدام GoJS مع React
+1. إعداد مكتبة GoJS
+تثبيت GoJS:
+
+nginx
+نسخ
+npm install gojs
+2. إنشاء مكون React لصفحة المخطط التفاعلي
+إنشاء ملف (مثلاً: PowerNetworkDiagram.jsx) ضمن مجلد components/Diagram.
+
+في هذا المكون، يتم جلب بيانات الشبكة من REST API وتحويلها إلى تنسيق JSON مناسب لـ GoJS.
+
+3. إعداد قوالب الرسم (Diagram Templates)
+أ. تعريف قوالب Nodes
+PowerSource Node:
+
+عرض: الاسم، الجهد، ومعلمة "أداة التوصيل".
+
+دعم فتح نافذة تعديل وحذف عند النقر.
+
+MainPanel و SubPanel Nodes:
+
+عرض بيانات اللوحات مع تضمين معلمة "أداة التوصيل".
+
+دعم وظائف التعديل والحذف.
+
+Load Node:
+
+عرض بيانات الحمل ومعلمة "أداة التوصيل".
+
+دعم التعديل والحذف.
+
+ب. تعريف قوالب Links (العلاقات)
+استخدام حقل connection_tool لتمثيل روابط التوصيل بين:
+
+مصادر الطاقة واللوحات.
+
+اللوحات والأحمال.
+
+تصميم الروابط بحيث تُظهر التسلسل الهرمي والاتصال بين العناصر.
+
+4. إعداد التخطيط والتفاعلات في المخطط
+أ. التخطيط الهرمي
+استخدام إعدادات GoJS لتوزيع العقد بشكل هرمي ومنظم.
+
+دعم التوسيط والتكبير والتصغير للمخطط.
+
+ب. تفعيل خاصية "إضاءة" المسار
+عند النقر على عقدة (مثل PowerSource أو Load)، يتم:
+
+إبراز وتلوين مسار التوصيل بين العناصر (إضاءة).
+
+عرض جدول جانبي (باستخدام ag-Grid أو Material-UI Table) يحتوي على تفاصيل العنصر والعناصر المرتبطة.
+
+ج. دعم وظائف التعديل والحذف
+إضافة أزرار تحرير وحذف داخل كل Node، بحيث يتم إرسال طلبات تعديل أو حذف عبر Axios إلى REST API.
+
+تحديث المخطط تلقائيًا عند أي تغيير في البيانات.
+
+نظرة عامة على خطوات التنفيذ (من الأصغر للأكبر)
+إعداد البيئة والباك إند:
+
+تثبيت Python وإنشاء وتفعيل البيئة الافتراضية (venv).
+
+تثبيت Django وDjango REST Framework.
+
+إنشاء مشروع Django وتطبيق network.
+
+إعداد ملف settings.py وربطه مع قاعدة البيانات.
+
+تصميم النماذج (PowerSource، MainPanel، SubPanel، Load) مع دمج تفاصيل "أداة التوصيل" ومعادلات كهربائية متقدمة.
+
+إعداد Serializers، ViewSets (دعم إنشاء، تعديل وحذف) وRouting للـ API.
+
+مزامنة قاعدة البيانات وإجراء الاختبارات.
+
+نماذج الإدخال والواجهة الرسومية ونظام التقارير (الفرونت إند):
+
+إنشاء مشروع React باستخدام create-react-app.
+
+تثبيت المكتبات اللازمة (React Router، Formik، Yup، Material-UI، Axios، ag-Grid).
+
+تصميم صفحات الإدخال لكل كيان مع دعم تعديل وحذف السجلات.
+
+إعداد نظام تقارير يعرض جداول تفاعلية مع إمكانية الفرز والتصفية وعرض النتائج الحسابية.
+
+إدارة الحالة والتكامل مع REST API لتحديث البيانات تلقائيًا.
+
+صفحة الشبكة التفاعلية (المخطط):
+
+تثبيت GoJS وإنشاء مكون React خاص بالمخطط.
+
+إعداد قوالب الرسم (Nodes وLinks) بحيث تُظهر تفاصيل كل كيان (بما في ذلك معلمة "أداة التوصيل").
+
+تنفيذ التخطيط الهرمي للمخطط مع دعم التكبير/التصغير والتوسيط.
+
+تفعيل خاصية "إضاءة" مسار التوصيل عند النقر على العقد وعرض التفاصيل في جدول جانبي.
+
+دعم وظائف تعديل وحذف العناصر مباشرة من المخطط مع تحديث البيانات في الوقت الحقيقي.
+
+بهذا يكون لديك برومبوت منظم ومفصل للمشروع بعد التعديل، يغطي:
+
+القسم الأول: الباك إند مع Django وواجهات API (دعم إنشاء، تعديل، حذف، معادلات كهربائية وحسابات).
+
+القسم الثاني: نماذج الإدخال والواجهة الرسومية باستخدام React مع نظام تقارير متكامل.
+
+القسم الثالث: صفحة الشبكة التفاعلية باستخدام GoJS مع دعم إضاءة مسارات التوصيل وتعديل وحذف العناصر.
+
+يضمن هذا التنظيم ترتيب الملفات بشكل واضح داخل مجلد المشروع، مما يسهل على نظام الذكاء الاصطناعي وأي مطور آخر تحديد مكان كل جزء والعمل عليه بشكل منفصل ومتكامل.
+
+
+
+
+
+
