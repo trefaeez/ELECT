@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>الأحمال الكهربائية - نظام إدارة شبكة الطاقة الكهربائية</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- تضمين مكتبة Bootstrap للتنسيق -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- تضمين Bootstrap RTL للدعم العربي -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
+    <!-- تضمين Font Awesome للأيقونات -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <!-- شريط التنقل العلوي -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-danger">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-bolt"></i> نظام إدارة شبكة الطاقة
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/power-sources">
+                            <i class="fas fa-plug"></i> مصادر الطاقة
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/panels">
+                            <i class="fas fa-server"></i> اللوحات
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/breakers">
+                            <i class="fas fa-toggle-on"></i> القواطع
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/loads">
+                            <i class="fas fa-lightbulb"></i> الأحمال
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- الحاوية الرئيسية -->
+    <div class="container mt-4">
+        <!-- قسم التنبيهات لعرض رسائل النجاح أو الفشل -->
+        <div id="alerts-container"></div>
+
+        <!-- رأس الصفحة -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0"><i class="fas fa-lightbulb text-danger"></i> الأحمال الكهربائية</h1>
+            <div>
+                <select id="load-filter-breaker" class="form-select d-inline-block me-2" style="width: auto;">
+                    <option value="">كل القواطع</option>
+                    <!-- سيتم إضافة الخيارات ديناميكياً -->
+                </select>
+                <button class="btn btn-danger" id="add-load-btn" disabled>
+                    <i class="fas fa-plus"></i> إضافة حمل
+                </button>
+            </div>
+        </div>
+
+        <!-- وصف للصفحة -->
+        <div class="alert alert-info mb-4">
+            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة الأحمال الكهربائية. يمكنك تصفية الأحمال حسب القاطع وإضافة أحمال جديدة.
+        </div>
+
+        <!-- قسم الأحمال -->
+        <section class="mb-5">
+            <!-- جدول الأحمال -->
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>الاسم</th>
+                            <th>الجهد</th>
+                            <th>الأمبير</th>
+                            <th>الاستهلاك (واط)</th>
+                            <th>القاطع</th>
+                            <th>اللوحة</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="loads-table-body">
+                        <!-- سيتم إضافة الصفوف ديناميكياً من خلال JavaScript -->
+                        <tr>
+                            <td colspan="8" class="text-center">يرجى اختيار قاطع أو انتظار تحميل البيانات...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- تذييل الصفحة -->
+        <footer class="mt-5 text-center text-muted pb-4">
+            <p>نظام إدارة شبكة الطاقة الكهربائية &copy; 2025</p>
+        </footer>
+    </div>
+
+    <!-- مودال إضافة حمل جديد -->
+    <div class="modal fade" id="addLoadModal" tabindex="-1" aria-labelledby="addLoadModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addLoadModalLabel">إضافة حمل جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-load-form">
+                        <input type="hidden" id="load-breaker-id">
+                        <div class="mb-3">
+                            <label for="load-name" class="form-label">اسم الحمل <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="load-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="load-voltage" class="form-label">الجهد الكهربائي <span class="text-danger">*</span></label>
+                            <select class="form-select" id="load-voltage" required>
+                                <option value="220">220 فولت</option>
+                                <option value="380">380 فولت</option>
+                                <option value="24">24 فولت</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="load-ampacity" class="form-label">الأمبير <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="load-ampacity" min="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="load-power-consumption" class="form-label">الاستهلاك (واط)</label>
+                            <input type="number" class="form-control" id="load-power-consumption" min="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="load-cable-length" class="form-label">طول الكابل (متر)</label>
+                            <input type="number" class="form-control" id="load-cable-length" min="0">
+                        </div>
+                        <div class="alert alert-info">
+                            سيتم ربط الحمل تلقائيًا بالقاطع المحدد
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-danger" id="save-load-btn">حفظ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- مودال التأكيد للحذف -->
+    <div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">تأكيد الحذف</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <p>هل أنت متأكد من حذف <span id="delete-item-name"></span>؟</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-danger" id="confirm-delete-btn">تأكيد الحذف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- تضمين Bootstrap -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- تضمين ملفات JavaScript -->
+    <script type="module" src="/static/js/modules/loads.js"></script>
+</body>
+</html>

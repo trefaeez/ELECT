@@ -7,27 +7,35 @@
 from django.urls import path, include  # استيراد أدوات تعريف المسارات
 from rest_framework import routers  # استيراد موجه الطلبات
 from django.http import HttpResponse  # استيراد فئة استجابة HTTP
+from django.shortcuts import render  # استيراد وظيفة عرض القوالب
+from django.views.generic import TemplateView  # استيراد العرض العام للقوالب
 
 # استيراد ViewSets من ملف views.py
 from .views import (
     PowerSourceViewSet,        # فئة عرض مصادر الطاقة (الشبكة المحلية، المولدات)
     PanelViewSet,              # فئة عرض اللوحات الكهربائية (رئيسية وفرعية)
     LoadViewSet,               # فئة عرض الأحمال الكهربائية
-    CircuitBreakerViewSet      # فئة عرض قواطع الدارة الكهربائية
+    CircuitBreakerViewSet,      # فئة عرض قواطع الدارة الكهربائية
+    # Import the new view functions
+    home_view,
+    power_sources_view,
+    panels_view,
+    loads_view,
+    breakers_view
 )
 
 # دالة بسيطة للصفحة الرئيسية
 def home(request):
     """
     الدالة المسؤولة عن عرض الصفحة الرئيسية للتطبيق
-    تقدم رسالة ترحيبية ورابط للوصول إلى واجهات API
+    تعرض صفحة إدارة شبكة الطاقة الكهربائية
     
     المدخلات:
         request - كائن طلب HTTP
     المخرجات:
-        كائن استجابة HTTP يحتوي على محتوى HTML بسيط
+        عرض القالب الرئيسي للتطبيق
     """
-    return HttpResponse("<h1>مرحباً بكم في مشروع إدارة الشبكة الكهربائية</h1><p>للوصول إلى واجهات API، استخدم <a href='/api/'>هذا الرابط</a></p>")
+    return render(request, 'index.html')
 
 # إنشاء موجه الطلبات وتسجيل المسارات لجميع الموارد
 router = routers.DefaultRouter()  # إنشاء موجه طلبات افتراضي
@@ -40,6 +48,13 @@ router.register(r'circuitbreakers', CircuitBreakerViewSet)  # مسار قواط�
 
 # تحديد قائمة المسارات النهائية للتطبيق
 urlpatterns = [
-    path('', home, name='home'),  # إضافة مسار الصفحة الرئيسية
+    # Use the new home_view instead of the local home function
+    path('', home_view, name='home'),  # إضافة مسار الصفحة الرئيسية
     path('api/', include(router.urls)),  # تضمين جميع مسارات API المسجلة في الموجه
+    
+    # Add paths for each HTML page
+    path('power-sources/', power_sources_view, name='power_sources'),
+    path('panels/', panels_view, name='panels'),
+    path('loads/', loads_view, name='loads'),
+    path('breakers/', breakers_view, name='breakers'),
 ]

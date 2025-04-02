@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>القواطع الكهربائية - نظام إدارة شبكة الطاقة الكهربائية</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- تضمين مكتبة Bootstrap للتنسيق -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- تضمين Bootstrap RTL للدعم العربي -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
+    <!-- تضمين Font Awesome للأيقونات -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <!-- شريط التنقل العلوي -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-warning text-dark">
+        <div class="container">
+            <a class="navbar-brand text-dark" href="/">
+                <i class="fas fa-bolt"></i> نظام إدارة شبكة الطاقة
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" href="/power-sources">
+                            <i class="fas fa-plug"></i> مصادر الطاقة
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" href="/panels">
+                            <i class="fas fa-server"></i> اللوحات
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active text-dark fw-bold" href="/breakers">
+                            <i class="fas fa-toggle-on"></i> القواطع
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" href="/loads">
+                            <i class="fas fa-lightbulb"></i> الأحمال
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- الحاوية الرئيسية -->
+    <div class="container mt-4">
+        <!-- قسم التنبيهات لعرض رسائل النجاح أو الفشل -->
+        <div id="alerts-container"></div>
+
+        <!-- رأس الصفحة -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0"><i class="fas fa-toggle-on text-warning"></i> القواطع الكهربائية</h1>
+            <div>
+                <select id="breaker-filter-panel" class="form-select d-inline-block me-2" style="width: auto;">
+                    <option value="">كل اللوحات</option>
+                    <!-- سيتم إضافة الخيارات ديناميكياً -->
+                </select>
+                <button class="btn btn-warning" id="add-breaker-btn" disabled>
+                    <i class="fas fa-plus"></i> إضافة قاطع
+                </button>
+            </div>
+        </div>
+
+        <!-- وصف للصفحة -->
+        <div class="alert alert-info mb-4">
+            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة القواطع الكهربائية. يمكنك تصفية القواطع حسب اللوحة، وإضافة قواطع جديدة، والانتقال إلى الأحمال المرتبطة بكل قاطع.
+        </div>
+
+        <!-- قسم القواطع -->
+        <section class="mb-5">
+            <!-- جدول القواطع -->
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>الاسم</th>
+                            <th>النوع</th>
+                            <th>الدور</th>
+                            <th>عدد الأقطاب</th>
+                            <th>التيار المقنن</th>
+                            <th>اللوحة</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="breakers-table-body">
+                        <!-- سيتم إضافة الصفوف ديناميكياً من خلال JavaScript -->
+                        <tr>
+                            <td colspan="8" class="text-center">يرجى اختيار لوحة أو انتظار تحميل البيانات...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- تذييل الصفحة -->
+        <footer class="mt-5 text-center text-muted pb-4">
+            <p>نظام إدارة شبكة الطاقة الكهربائية &copy; 2025</p>
+        </footer>
+    </div>
+
+    <!-- مودال إضافة قاطع جديد -->
+    <div class="modal fade" id="addBreakerModal" tabindex="-1" aria-labelledby="addBreakerModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addBreakerModalLabel">إضافة قاطع جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-breaker-form">
+                        <input type="hidden" id="breaker-panel-id">
+                        <div class="mb-3">
+                            <label for="breaker-name" class="form-label">اسم القاطع</label>
+                            <input type="text" class="form-control" id="breaker-name">
+                        </div>
+                        <div class="mb-3">
+                            <label for="breaker-type" class="form-label">نوع القاطع <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-type" required>
+                                <option value="MCB">MCB - قاطع دارة مصغر</option>
+                                <option value="MCCB">MCCB - قاطع دارة مشكل</option>
+                                <option value="ACB">ACB - قاطع دارة هوائي</option>
+                                <option value="ELCB">ELCB - قاطع دارة تسرب أرضي</option>
+                                <option value="RCD">RCD - جهاز تيار متبقي</option>
+                                <option value="RCBO">RCBO - قاطع دارة بتيار متبقي</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="breaker-poles" class="form-label">عدد الأقطاب <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-poles" required>
+                                <option value="1">1 قطب</option>
+                                <option value="2">2 قطب</option>
+                                <option value="3">3 أقطاب</option>
+                                <option value="4">4 أقطاب</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="breaker-rated-current" class="form-label">التيار المقنن (أمبير) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="breaker-rated-current" min="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="breaker-trip-curve" class="form-label">منحنى الفصل</label>
+                            <input type="text" class="form-control" id="breaker-trip-curve" placeholder="مثال: B، C، D" value="C">
+                        </div>
+                        <div class="alert alert-info">
+                            سيتم ربط القاطع تلقائيًا باللوحة المحددة
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-warning" id="save-breaker-btn">حفظ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- مودال التأكيد للحذف -->
+    <div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">تأكيد الحذف</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    <p>هل أنت متأكد من حذف <span id="delete-item-name"></span>؟</p>
+                    <p class="text-danger">سيتم حذف جميع العناصر المرتبطة به أيضاً.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-danger" id="confirm-delete-btn">تأكيد الحذف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- تضمين Bootstrap -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- تضمين ملفات JavaScript -->
+    <script type="module" src="/static/js/modules/breakers.js"></script>
+</body>
+</html>
