@@ -30,6 +30,88 @@ class CircuitBreakerSerializer(serializers.ModelSerializer):
         """إرجاع اسم اللوحة التي ينتمي إليها القاطع (إن وجدت)"""
         return obj.panel.name if obj.panel else None
 
+# سيريلايزر لإنشاء قاطع جديد داخل لوحة
+class PanelBreakerSerializer(serializers.ModelSerializer):
+    """
+    مُسلسل خاص بإنشاء قاطع جديد داخل لوحة محددة
+    يستخدم لإنشاء قواطع توزيع في داخل اللوحات
+    """
+    class Meta:
+        model = CircuitBreaker
+        exclude = ['panel']  # استبعاد حقل panel لأنه سيتم تحديده تلقائياً
+
+    def create(self, validated_data):
+        """إنشاء قاطع جديد وربطه باللوحة المحددة"""
+        panel_id = self.context.get('panel_id')
+        if not panel_id:
+            raise serializers.ValidationError("يجب تحديد اللوحة")
+        
+        panel = Panel.objects.get(id=panel_id)
+        circuit_breaker = CircuitBreaker.objects.create(panel=panel, **validated_data)
+        return circuit_breaker
+
+# سيريلايزر لإنشاء لوحة جديدة مرتبطة بمصدر طاقة
+class PowerSourcePanelSerializer(serializers.ModelSerializer):
+    """
+    مُسلسل خاص بإنشاء لوحة جديدة مرتبطة بمصدر طاقة محدد
+    يستخدم لإضافة لوحات رئيسية من صفحة مصدر الطاقة
+    """
+    class Meta:
+        model = Panel
+        exclude = ['power_source']  # استبعاد حقل power_source لأنه سيتم تحديده تلقائياً
+
+    def create(self, validated_data):
+        """إنشاء لوحة جديدة وربطها بمصدر الطاقة المحدد"""
+        power_source_id = self.context.get('power_source_id')
+        if not power_source_id:
+            raise serializers.ValidationError("يجب تحديد مصدر الطاقة")
+        
+        power_source = PowerSource.objects.get(id=power_source_id)
+        
+        # التأكد من أن اللوحة الجديدة مرتبطة بمصدر الطاقة وتعيين النوع كلوحة رئيسية
+        panel = Panel.objects.create(
+            power_source=power_source,
+            panel_type='main',  # تعيين كلوحة رئيسية لأنها متصلة بمصدر طاقة مباشرة
+            **validated_data
+        )
+        return panel
+
+# سيريلايزر لإنشاء حمل جديد مرتبط بقاطع
+class BreakerLoadSerializer(serializers.ModelSerializer):
+    """
+    مُسلسل خاص بإنشاء حمل جديد مرتبط بقاطع محدد
+    يستخدم لإضافة أحمال من صفحة القاطع
+    """
+    class Meta:
+        model = Load
+        exclude = ['breaker', 'panel']  # استبعاد حقول breaker و panel لأنها ستحدد تلقائياً
+
+    def create(self, validated_data):
+        """إنشاء حمل جديد وربطه بالقاطع واللوحة المحددين"""
+        breaker_id = self.context.get('breaker_id')
+        panel_id = self.context.get('panel_id')
+        
+        if not breaker_id:
+            raise serializers.ValidationError("يجب تحديد القاطع")
+        
+        breaker = CircuitBreaker.objects.get(id=breaker_id)
+        
+        # للتأكد من الاتساق، نتحقق من وجود اللوحة التي ينتمي إليها القاطع
+        if panel_id:
+            panel = Panel.objects.get(id=panel_id)
+        elif breaker.panel:
+            panel = breaker.panel
+        else:
+            raise serializers.ValidationError("لا يمكن إضافة حمل لقاطع غير مرتبط بلوحة")
+        
+        # إنشاء الحمل مع ربطه بالقاطع واللوحة
+        load = Load.objects.create(
+            breaker=breaker,
+            panel=panel,
+            **validated_data
+        )
+        return load
+
 # فئة المُسلسل الخاصة بمصادر الطاقة (PowerSource)
 class PowerSourceSerializer(serializers.ModelSerializer):
     """
@@ -75,6 +157,34 @@ class PanelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Panel  # النموذج المرتبط
         fields = '__all__'  # تضمين جميع الحقول في المُسلسل
+    
+    def validate(self, data):
+        """
+        التحقق من صحة البيانات حسب نوع اللوحة
+        يتأكد من استيفاء شروط اللوحة الرئيسية واللوحة الفرعية
+        """
+        panel_type = data.get('panel_type')
+        power_source = data.get('power_source')
+        parent_panel = data.get('parent_panel')
+        feeder_breaker = data.get('feeder_breaker')
+        
+        # التحقق من شروط اللوحة الرئيسية
+        if panel_type == 'main':
+            if not power_source:
+                raise serializers.ValidationError({"power_source": "يجب تحديد مصدر الطاقة للوحة الرئيسية"})
+            if parent_panel:
+                raise serializers.ValidationError({"parent_panel": "اللوحة الرئيسية لا يمكن أن تكون متصلة بلوحة أم"})
+        
+        # التحقق من شروط اللوحة الفرعية
+        elif panel_type == 'sub':
+            if not parent_panel:
+                raise serializers.ValidationError({"parent_panel": "يجب تحديد اللوحة الأم للوحة الفرعية"})
+            if not feeder_breaker:
+                raise serializers.ValidationError({"feeder_breaker": "يجب تحديد القاطع المغذي للوحة الفرعية"})
+            if power_source:
+                raise serializers.ValidationError({"power_source": "اللوحة الفرعية لا يمكن أن تكون متصلة بمصدر طاقة مباشرة"})
+        
+        return data
     
     def get_distribution_breakers(self, obj):
         """
