@@ -52,6 +52,32 @@ class PowerSourceViewSet(viewsets.ModelViewSet):
         """
         powersource = self.get_object()
         return Response({'message': f'معلومات عن مصدر الطاقة: {powersource.name}'})
+    
+    @action(detail=True, methods=['get', 'post'])
+    def panels(self, request, pk=None):
+        """
+        طريقة للحصول على اللوحات المرتبطة بمصدر طاقة محدد أو إضافة لوحة جديدة
+        GET: يجلب جميع اللوحات المرتبطة بمصدر طاقة
+        POST: يضيف لوحة جديدة إلى مصدر طاقة محدد
+        """
+        powersource = self.get_object()
+        
+        if request.method == 'GET':
+            # جلب اللوحات المرتبطة بمصدر الطاقة
+            panels = Panel.objects.filter(power_source=powersource)
+            serializer = PanelSerializer(panels, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            # إضافة لوحة جديدة إلى مصدر الطاقة
+            data = request.data.copy()
+            data['power_source'] = powersource.id
+            
+            serializer = PanelSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=201)
+            return Response(serializer.errors, status=400)
 
 
 class PanelViewSet(viewsets.ModelViewSet):
@@ -61,6 +87,32 @@ class PanelViewSet(viewsets.ModelViewSet):
     """
     queryset = Panel.objects.all()  # جلب جميع كائنات اللوحات
     serializer_class = PanelSerializer  # تحديد السيريلايزر المستخدم
+    
+    @action(detail=True, methods=['get', 'post'])
+    def breakers(self, request, pk=None):
+        """
+        طريقة للحصول على القواطع المرتبطة بلوحة محددة أو إضافة قاطع جديد
+        GET: يجلب جميع القواطع المرتبطة باللوحة
+        POST: يضيف قاطع جديد إلى اللوحة المحددة
+        """
+        panel = self.get_object()
+        
+        if request.method == 'GET':
+            # جلب القواطع المرتبطة باللوحة
+            breakers = CircuitBreaker.objects.filter(panel=panel)
+            serializer = CircuitBreakerSerializer(breakers, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            # إضافة قاطع جديد إلى اللوحة
+            data = request.data.copy()
+            data['panel'] = panel.id
+            
+            serializer = CircuitBreakerSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=201)
+            return Response(serializer.errors, status=400)
 
 
 class LoadViewSet(viewsets.ModelViewSet):
@@ -79,3 +131,29 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
     """
     queryset = CircuitBreaker.objects.all()  # جلب جميع كائنات القواطع
     serializer_class = CircuitBreakerSerializer  # تحديد السيريلايزر المستخدم
+    
+    @action(detail=True, methods=['get', 'post'])
+    def loads(self, request, pk=None):
+        """
+        طريقة للحصول على الأحمال المرتبطة بقاطع محدد أو إضافة حمل جديد
+        GET: يجلب جميع الأحمال المرتبطة بالقاطع
+        POST: يضيف حمل جديد إلى القاطع المحدد
+        """
+        breaker = self.get_object()
+        
+        if request.method == 'GET':
+            # جلب الأحمال المرتبطة بالقاطع
+            loads = Load.objects.filter(breaker=breaker)
+            serializer = LoadSerializer(loads, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            # إضافة حمل جديد إلى القاطع
+            data = request.data.copy()
+            data['breaker'] = breaker.id
+            
+            serializer = LoadSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=201)
+            return Response(serializer.errors, status=400)
