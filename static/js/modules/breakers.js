@@ -249,9 +249,10 @@ async function saveBreaker() {
     // جمع البيانات من النموذج
     const panelId = document.getElementById('breaker-panel-id').value || selectedPanelId;
     const name = document.getElementById('breaker-name').value;
-    const ampacity = document.getElementById('breaker-ampacity').value;
     const type = document.getElementById('breaker-type').value;
-    const description = document.getElementById('breaker-description').value;
+    const poles = document.getElementById('breaker-poles').value;
+    const ratedCurrent = document.getElementById('breaker-rated-current').value;
+    const tripCurve = document.getElementById('breaker-trip-curve').value;
     
     // التحقق من صحة البيانات
     if (!panelId) {
@@ -259,7 +260,7 @@ async function saveBreaker() {
         return;
     }
     
-    if (!name || !ampacity) {
+    if (!name || !ratedCurrent) {
         showAlert('يرجى ملء جميع الحقول المطلوبة', 'warning');
         return;
     }
@@ -267,14 +268,11 @@ async function saveBreaker() {
     // تحضير البيانات للإرسال
     const breakerData = {
         name: name,
-        ampacity: parseFloat(ampacity),
-        type: type
+        type: type,
+        poles: parseInt(poles),
+        ampacity: parseFloat(ratedCurrent),
+        trip_curve: tripCurve
     };
-    
-    // إضافة الوصف إذا تم توفيره
-    if (description) {
-        breakerData.description = description;
-    }
     
     try {
         // إرسال البيانات للخادم
