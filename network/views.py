@@ -41,6 +41,18 @@ def breakers_view(request):
     """Render the circuit breakers page"""
     return render(request, 'breakers.html')
 
+def network_visualizer_view(request):
+    """Render the network visualizer page"""
+    return render(request, 'network-visualizer.html')
+
+def gojs_network_visualizer_view(request):
+    """Render the GoJS network visualizer page"""
+    return render(request, 'gojs-network-visualizer.html')
+
+def panel_tree_visualizer_view(request):
+    """Render the panel tree visualizer page"""
+    return render(request, 'panel-tree-visualizer.html')
+
 # ViewSets لكل نموذج - توفر CRUD operations بشكل تلقائي
 
 class PowerSourceViewSet(viewsets.ModelViewSet):
