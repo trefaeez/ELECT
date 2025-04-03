@@ -102,6 +102,12 @@ function initSimpleNetworkGraph() {
             // رسم الشبكة
             renderNetwork(nodesGroup, edgesGroup, networkData);
             
+            // تطبيق الفلتر الافتراضي لإخفاء القواطع عند بدء التشغيل
+            hideAllBreakers();
+            
+            // إنشاء الروابط المباشرة بين اللوحات والأحمال
+            updateDirectPanelToLoadConnections();
+            
             // إضافة التفاعلية
             setupInteractivity(svg, nodesGroup, edgesGroup);
             
@@ -116,6 +122,39 @@ function initSimpleNetworkGraph() {
     }).catch(error => {
         console.error('خطأ في تحميل بيانات الشبكة:', error);
         displayErrorMessage('حدث خطأ أثناء تحميل بيانات الشبكة. يرجى المحاولة مرة أخرى.');
+    });
+}
+
+/**
+ * إخفاء جميع القواطع عند بدء تشغيل المخطط
+ */
+function hideAllBreakers() {
+    // إخفاء القواطع
+    networkData.nodes.forEach(node => {
+        if (node.data.entityType === 'circuitBreaker') {
+            const breakerElement = document.getElementById(node.id);
+            if (breakerElement) {
+                breakerElement.style.display = 'none';
+            }
+        }
+    });
+    
+    // إخفاء الروابط بين اللوحات والقواطع
+    networkData.edges.forEach(edge => {
+        if (edge.source.startsWith('panel-') && edge.target.startsWith('breaker-')) {
+            const edgeElement = document.getElementById(edge.id);
+            if (edgeElement) {
+                edgeElement.style.display = 'none';
+            }
+        }
+        
+        // إخفاء الروابط بين القواطع والأحمال أيضاً
+        if (edge.source.startsWith('breaker-') && edge.target.startsWith('load-')) {
+            const edgeElement = document.getElementById(edge.id);
+            if (edgeElement) {
+                edgeElement.style.display = 'none';
+            }
+        }
     });
 }
 
@@ -327,6 +366,10 @@ function setupControlButtons(svg, nodesGroup, edgesGroup) {
     document.getElementById('showLoads').addEventListener('change', () => applyFilters(nodesGroup, edgesGroup));
 }
 
+// تعريف مجموعة العناصر النشطة (المحددة) في المخطط
+let activeElements = new Set();
+let activePaths = []; // مسارات التغذية والأحمال النشطة
+
 /**
  * معالجة النقر على العقدة
  * @param {Object} node - بيانات العقدة
@@ -337,6 +380,27 @@ function handleNodeClick(node) {
     
     // تمييز العقدة المحددة
     highlightNode(node.id);
+    
+    // إضافة أو إزالة العنصر من العناصر النشطة
+    if (activeElements.has(node.id)) {
+        activeElements.delete(node.id);
+        if (node.data.entityType === 'panel') {
+            // إخفاء القواطع المرتبطة عند إلغاء تحديد اللوحة
+            hideRelatedBreakers(node.id);
+        }
+    } else {
+        activeElements.add(node.id);
+        if (node.data.entityType === 'panel') {
+            // إظهار القواطع المرتبطة عند تحديد اللوحة
+            showRelatedBreakers(node.id);
+        } else if (node.data.entityType === 'circuitBreaker') {
+            // إظهار الأحمال المرتبطة عند تحديد القاطع
+            showRelatedLoads(node.id);
+        }
+    }
+    
+    // إضاءة مسارات التغذية للعنصر
+    highlightPowerPath(node.id);
     
     // عرض التفاصيل
     const nodeType = node.data.entityType;
@@ -398,6 +462,11 @@ function handleNodeClick(node) {
     }
     
     tableContent += '</table>';
+    
+    // إضافة جدول المسار إذا كان هناك مسار نشط
+    if (activePaths.length > 0) {
+        tableContent += generatePathTable();
+    }
     
     // إضافة زر للانتقال إلى صفحة تفاصيل العنصر
     const entityUrlPath = nodeType === 'powerSource' ? 'power-sources' : 
@@ -491,21 +560,34 @@ function applyFilters(nodesGroup, edgesGroup) {
             nodeElement.style.display = 'none';
         } else if (node.data.entityType === 'panel' && !showPanels) {
             nodeElement.style.display = 'none';
-        } else if (node.data.entityType === 'circuitBreaker' && !showBreakers) {
-            nodeElement.style.display = 'none';
-        } else if (node.data.entityType === 'load' && !showLoads) {
-            nodeElement.style.display = 'none';
+        } else if (node.data.entityType === 'circuitBreaker') {
+            // إخفاء القواطع افتراضياً (ستظهر فقط عند النقر على اللوحة)
+            if (!showBreakers || !isPanelExpanded(getParentPanelId(node.id))) {
+                nodeElement.style.display = 'none';
+            } else {
+                nodeElement.style.display = 'block';
+            }
+        } else if (node.data.entityType === 'load') {
+            // عرض الأحمال افتراضياً
+            if (!showLoads) {
+                nodeElement.style.display = 'none';
+            } else {
+                nodeElement.style.display = 'block';
+            }
         } else {
             nodeElement.style.display = 'block';
         }
     });
+    
+    // تحديث الروابط المباشرة بين اللوحات والأحمال
+    updateDirectPanelToLoadConnections();
     
     // تحديد العقد المرئية
     const visibleNodeIds = networkData.nodes
         .filter(node => {
             if (node.data.entityType === 'powerSource' && !showPowerSources) return false;
             if (node.data.entityType === 'panel' && !showPanels) return false;
-            if (node.data.entityType === 'circuitBreaker' && !showBreakers) return false;
+            if (node.data.entityType === 'circuitBreaker' && (!showBreakers || !isPanelExpanded(getParentPanelId(node.id)))) return false;
             if (node.data.entityType === 'load' && !showLoads) return false;
             return true;
         })
@@ -516,12 +598,141 @@ function applyFilters(nodesGroup, edgesGroup) {
         const edgeElement = document.getElementById(edge.id);
         if (!edgeElement) return;
         
+        // عرض الحواف الأصلية فقط إذا كانت نقاط البداية والنهاية مرئية
         if (visibleNodeIds.includes(edge.source) && visibleNodeIds.includes(edge.target)) {
             edgeElement.style.display = 'block';
         } else {
             edgeElement.style.display = 'none';
         }
     });
+    
+    // عرض الروابط المباشرة بين اللوحات والأحمال
+    document.querySelectorAll('.direct-panel-load-edge').forEach(edge => {
+        const [panelId, loadId] = edge.id.split('-to-');
+        const panelVisible = visibleNodeIds.includes(panelId);
+        const loadVisible = visibleNodeIds.includes(loadId);
+        const panelExpanded = isPanelExpanded(panelId);
+        
+        // إذا كانت اللوحة موسعة، نخفي الرابط المباشر ونظهر القواطع والروابط العادية
+        if (panelVisible && loadVisible && !panelExpanded) {
+            edge.style.display = 'block';
+        } else {
+            edge.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * تحديث الروابط المباشرة بين اللوحات والأحمال
+ * إنشاء روابط افتراضية مباشرة من اللوحات إلى الأحمال لعرضها عندما تكون القواطع مخفية
+ */
+function updateDirectPanelToLoadConnections() {
+    // إزالة جميع الروابط المباشرة السابقة
+    document.querySelectorAll('.direct-panel-load-edge').forEach(edge => {
+        edge.remove();
+    });
+    
+    // مجموعة الروابط المباشرة من اللوحات إلى الأحمال
+    const directConnections = [];
+    
+    // البحث عن جميع الأحمال وإنشاء روابط مباشرة إلى اللوحة الأم
+    networkData.nodes.forEach(node => {
+        if (node.data.entityType === 'load') {
+            // البحث عن القاطع المرتبط بالحمل
+            const breakerEdge = networkData.edges.find(edge => 
+                edge.target === node.id && edge.source.startsWith('breaker-')
+            );
+            
+            if (breakerEdge) {
+                const breakerId = breakerEdge.source;
+                
+                // البحث عن اللوحة المرتبطة بهذا القاطع
+                const panelEdge = networkData.edges.find(edge => 
+                    edge.target === breakerId && edge.source.startsWith('panel-')
+                );
+                
+                if (panelEdge) {
+                    const panelId = panelEdge.source;
+                    
+                    // إنشاء رابط مباشر
+                    directConnections.push({
+                        panelId: panelId,
+                        loadId: node.id,
+                        loadName: node.data.label
+                    });
+                }
+            }
+        }
+    });
+    
+    // إضافة الروابط المباشرة إلى المخطط
+    const edgesGroup = document.querySelector('.edges');
+    if (!edgesGroup) return;
+    
+    directConnections.forEach(conn => {
+        const panelNode = networkData.nodes.find(n => n.id === conn.panelId);
+        const loadNode = networkData.nodes.find(n => n.id === conn.loadId);
+        
+        if (panelNode && loadNode) {
+            // حساب الإحداثيات
+            const sourceX = panelNode.position.x + 75; // وسط العقدة
+            const sourceY = panelNode.position.y + 20;
+            const targetX = loadNode.position.x + 75;
+            const targetY = loadNode.position.y + 20;
+            
+            // إنشاء مسار بيزير
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('id', `${conn.panelId}-to-${conn.loadId}`);
+            path.setAttribute('class', 'direct-panel-load-edge');
+            path.setAttribute('stroke', typeColors.load);
+            path.setAttribute('stroke-width', '1.5');
+            path.setAttribute('stroke-dasharray', '5,3');
+            path.setAttribute('fill', 'none');
+            
+            // حساب منحنى المسار
+            const dx = Math.abs(targetX - sourceX) * 0.3;
+            const pathData = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
+            path.setAttribute('d', pathData);
+            
+            // إضافة المسار
+            edgesGroup.appendChild(path);
+            
+            // إضافة اسم الحمل كتلميح
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('class', 'direct-panel-load-edge');
+            text.setAttribute('x', (sourceX + targetX) / 2);
+            text.setAttribute('y', (sourceY + targetY) / 2 - 5);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-size', '10');
+            text.setAttribute('fill', typeColors.load);
+            text.textContent = conn.loadName;
+            
+            edgesGroup.appendChild(text);
+        }
+    });
+}
+
+/**
+ * التحقق مما إذا كانت اللوحة موسعة (تم النقر عليها)
+ * @param {string} panelId - معرف اللوحة
+ * @returns {boolean} ما إذا كانت اللوحة موسعة
+ */
+function isPanelExpanded(panelId) {
+    return activeElements.has(panelId);
+}
+
+/**
+ * الحصول على معرف اللوحة الأم للقاطع
+ * @param {string} breakerId - معرف القاطع
+ * @returns {string} معرف اللوحة الأم أو null إذا لم تكن موجودة
+ */
+function getParentPanelId(breakerId) {
+    // البحث عن الحافة الواصلة للقاطع
+    const parentEdge = networkData.edges.find(edge => 
+        edge.target === breakerId && edge.source.startsWith('panel-')
+    );
+    
+    return parentEdge ? parentEdge.source : null;
 }
 
 /**
@@ -546,6 +757,449 @@ function exportAsImage() {
         console.error('خطأ في تصدير الصورة:', error);
         alert('حدث خطأ أثناء تصدير الصورة');
     });
+}
+
+/**
+ * إظهار القواطع المرتبطة باللوحة عند النقر عليها
+ * @param {string} panelId - معرف اللوحة
+ */
+function showRelatedBreakers(panelId) {
+    // البحث عن جميع القواطع المتصلة باللوحة المحددة
+    const relatedEdges = networkData.edges.filter(edge => 
+        edge.source === panelId && edge.target.startsWith('breaker-')
+    );
+    
+    // إظهار القواطع المرتبطة
+    relatedEdges.forEach(edge => {
+        const breakerId = edge.target;
+        const breakerElement = document.getElementById(breakerId);
+        
+        if (breakerElement) {
+            breakerElement.style.display = 'block';
+            
+            // إظهار الحافة من اللوحة إلى القاطع
+            const edgeElement = document.getElementById(edge.id);
+            if (edgeElement) {
+                edgeElement.style.display = 'block';
+            }
+            
+            // إضافة تأثير مرئي للإشارة إلى أن اللوحة منبثقة
+            const rect = breakerElement.querySelector('rect');
+            if (rect) {
+                // حفظ اللون الأصلي
+                rect.dataset.originalFill = rect.getAttribute('fill');
+                // تغيير لون الخلفية مؤقتاً
+                rect.setAttribute('fill', '#ffc107');
+                // إضافة تأثير وميض
+                animateBreakerAppearance(rect);
+            }
+            
+            // إظهار الروابط من القاطع إلى الأحمال المرتبطة به
+            const breakerToLoadEdges = networkData.edges.filter(e => 
+                e.source === breakerId && e.target.startsWith('load-')
+            );
+            
+            breakerToLoadEdges.forEach(loadEdge => {
+                const loadEdgeElement = document.getElementById(loadEdge.id);
+                if (loadEdgeElement) {
+                    loadEdgeElement.style.display = 'block';
+                }
+                
+                // نحتفظ بالأحمال ظاهرة ولكن نخفي الروابط المباشرة من اللوحة إلى الأحمال
+                const loadId = loadEdge.target;
+                const directEdge = document.getElementById(`${panelId}-to-${loadId}`);
+                if (directEdge) {
+                    directEdge.style.display = 'none';
+                }
+                
+                // ونخفي أيضاً نص التلميح المرتبط بالرابط المباشر
+                document.querySelectorAll(`.direct-panel-load-edge[id="${panelId}-to-${loadId}-text"]`).forEach(text => {
+                    text.style.display = 'none';
+                });
+            });
+        }
+    });
+    
+    applyFilters(
+        document.querySelector('.nodes'), 
+        document.querySelector('.edges')
+    );
+}
+
+/**
+ * إظهار الأحمال المرتبطة بالقاطع عند النقر عليه
+ * @param {string} breakerId - معرف القاطع
+ */
+function showRelatedLoads(breakerId) {
+    // البحث عن جميع الأحمال المتصلة بالقاطع المحدد
+    const relatedEdges = networkData.edges.filter(edge => 
+        edge.source === breakerId && edge.target.startsWith('load-')
+    );
+    
+    // إظهار الأحمال المرتبطة
+    relatedEdges.forEach(edge => {
+        const loadId = edge.target;
+        const loadElement = document.getElementById(loadId);
+        
+        if (loadElement) {
+            loadElement.style.display = 'block';
+            
+            // إضافة تأثير مرئي
+            const rect = loadElement.querySelector('rect');
+            if (rect) {
+                rect.dataset.originalFill = rect.getAttribute('fill');
+                rect.setAttribute('fill', '#0d6efd');
+                animateLoadAppearance(rect);
+            }
+        }
+    });
+    
+    applyFilters(
+        document.querySelector('.nodes'), 
+        document.querySelector('.edges')
+    );
+}
+
+/**
+ * إخفاء القواطع المرتبطة باللوحة عند إلغاء تحديدها
+ * @param {string} panelId - معرف اللوحة
+ */
+function hideRelatedBreakers(panelId) {
+    // البحث عن جميع القواطع المتصلة باللوحة
+    const relatedEdges = networkData.edges.filter(edge => 
+        edge.source === panelId && edge.target.startsWith('breaker-')
+    );
+    
+    // إخفاء القواطع فقط وإعادة إظهار الروابط المباشرة
+    relatedEdges.forEach(edge => {
+        const breakerId = edge.target;
+        const breakerElement = document.getElementById(breakerId);
+        
+        if (breakerElement) {
+            // استعادة اللون الأصلي للقاطع إذا كان محفوظاً
+            const rect = breakerElement.querySelector('rect');
+            if (rect && rect.dataset.originalFill) {
+                rect.setAttribute('fill', rect.dataset.originalFill);
+            }
+            
+            // إخفاء القاطع وحافته الواصلة من اللوحة
+            breakerElement.style.display = 'none';
+            
+            // إخفاء الحافة من اللوحة إلى القاطع
+            const edgeElement = document.getElementById(edge.id);
+            if (edgeElement) {
+                edgeElement.style.display = 'none';
+            }
+            
+            // البحث عن الأحمال المرتبطة بهذا القاطع
+            const breakerToLoadEdges = networkData.edges.filter(loadEdge => 
+                loadEdge.source === breakerId && loadEdge.target.startsWith('load-')
+            );
+            
+            // إعادة ظهور الروابط المباشرة من اللوحة إلى الأحمال
+            breakerToLoadEdges.forEach(loadEdge => {
+                const loadId = loadEdge.target;
+                
+                // إظهار الروابط المباشرة
+                const directEdge = document.getElementById(`${panelId}-to-${loadId}`);
+                if (directEdge) {
+                    directEdge.style.display = 'block';
+                }
+                
+                // إظهار نص التلميح المرتبط بالرابط المباشر
+                document.querySelectorAll(`.direct-panel-load-edge[id="${panelId}-to-${loadId}-text"]`).forEach(text => {
+                    text.style.display = 'block';
+                });
+                
+                // إخفاء الروابط بين القواطع والأحمال
+                const breakerLoadEdgeElement = document.getElementById(loadEdge.id);
+                if (breakerLoadEdgeElement) {
+                    breakerLoadEdgeElement.style.display = 'none';
+                }
+            });
+            
+            // حذف القاطع من قائمة العناصر النشطة
+            activeElements.delete(breakerId);
+        }
+    });
+    
+    // إعادة تطبيق الفلاتر
+    applyFilters(
+        document.querySelector('.nodes'), 
+        document.querySelector('.edges')
+    );
+}
+
+/**
+ * تحريك القاطع عند ظهوره (تأثير مرئي)
+ * @param {SVGElement} element - عنصر القاطع
+ */
+function animateBreakerAppearance(element) {
+    // تأثير بسيط للوميض
+    let opacity = 0.5;
+    const interval = setInterval(() => {
+        opacity += 0.1;
+        element.setAttribute('opacity', opacity);
+        
+        if (opacity >= 1) {
+            clearInterval(interval);
+            element.setAttribute('opacity', 1);
+        }
+    }, 50);
+}
+
+/**
+ * تحريك الحمل عند ظهوره (تأثير مرئي)
+ * @param {SVGElement} element - عنصر الحمل
+ */
+function animateLoadAppearance(element) {
+    // تأثير بسيط للوميض
+    let opacity = 0.5;
+    const interval = setInterval(() => {
+        opacity += 0.1;
+        element.setAttribute('opacity', opacity);
+        
+        if (opacity >= 1) {
+            clearInterval(interval);
+            element.setAttribute('opacity', 1);
+        }
+    }, 50);
+}
+
+/**
+ * إضاءة مسار التغذية للعنصر المحدد
+ * @param {string} nodeId - معرف العقدة
+ */
+function highlightPowerPath(nodeId) {
+    // إعادة تعيين مسارات الإضاءة السابقة
+    resetHighlightedPaths();
+    
+    // تتبع مسار التغذية من مصدر الطاقة إلى العنصر
+    const upstreamPath = findUpstreamPath(nodeId);
+    
+    // تتبع مسار التغذية من العنصر إلى الأحمال
+    const downstreamPath = findDownstreamPath(nodeId);
+    
+    // دمج المسارين
+    activePaths = [...upstreamPath, ...downstreamPath];
+    
+    // إضاءة المسارات
+    activePaths.forEach(pathSegment => {
+        const edgeElement = document.getElementById(pathSegment.edgeId);
+        if (edgeElement) {
+            // تخزين اللون الأصلي
+            if (!edgeElement.dataset.originalStroke) {
+                edgeElement.dataset.originalStroke = edgeElement.getAttribute('stroke');
+            }
+            
+            // تغيير لون الحافة للإشارة إلى التحديد
+            if (pathSegment.type === 'upstream') {
+                edgeElement.setAttribute('stroke', '#ff6600'); // برتقالي للمسار الأعلى
+            } else {
+                edgeElement.setAttribute('stroke', '#00aaff'); // أزرق فاتح للمسار الأدنى
+            }
+            
+            // زيادة سمك الخط
+            edgeElement.setAttribute('stroke-width', '4');
+        }
+    });
+}
+
+/**
+ * إعادة تعيين مسارات الإضاءة
+ */
+function resetHighlightedPaths() {
+    // إعادة لون جميع الحواف المضاءة سابقاً
+    document.querySelectorAll('.edges path[data-original-stroke]').forEach(edge => {
+        // استعادة اللون الأصلي
+        edge.setAttribute('stroke', edge.dataset.originalStroke);
+        // إعادة تعيين السمك
+        edge.setAttribute('stroke-width', '2');
+        // إزالة البيانات المخزنة
+        delete edge.dataset.originalStroke;
+    });
+    
+    // مسح مصفوفة المسارات النشطة
+    activePaths = [];
+}
+
+/**
+ * البحث عن المسار التصاعدي (من العنصر إلى المصدر)
+ * @param {string} nodeId - معرف العقدة
+ * @returns {Array} مسار التغذية التصاعدي
+ */
+function findUpstreamPath(nodeId) {
+    const path = [];
+    let currentNodeId = nodeId;
+    let visited = new Set();
+    
+    // منع التكرار والدورات
+    visited.add(currentNodeId);
+    
+    while (currentNodeId) {
+        // البحث عن الحافة الواصلة للعقدة الحالية
+        const incomingEdge = networkData.edges.find(edge => edge.target === currentNodeId);
+        
+        // إذا لم يكن هناك حافة واصلة أو وصلنا لمصدر طاقة، نتوقف
+        if (!incomingEdge) break;
+        
+        // إضافة الحافة إلى المسار
+        path.push({
+            edgeId: incomingEdge.id,
+            sourceId: incomingEdge.source,
+            targetId: incomingEdge.target,
+            type: 'upstream'
+        });
+        
+        // الانتقال للعقدة التالية في المسار (الأب)
+        currentNodeId = incomingEdge.source;
+        
+        // التحقق من وجود دورة
+        if (visited.has(currentNodeId)) {
+            break;
+        }
+        
+        visited.add(currentNodeId);
+    }
+    
+    return path;
+}
+
+/**
+ * البحث عن المسار التنازلي (من العنصر إلى الأحمال)
+ * @param {string} nodeId - معرف العقدة
+ * @returns {Array} مسار التغذية التنازلي
+ */
+function findDownstreamPath(nodeId) {
+    const path = [];
+    const visited = new Set();
+    
+    // دالة تكرارية لاكتشاف جميع المسارات النازلة
+    function exploreDownstream(currentId) {
+        if (visited.has(currentId)) return;
+        visited.add(currentId);
+        
+        // البحث عن جميع الحواف الخارجة من هذه العقدة
+        const outgoingEdges = networkData.edges.filter(edge => edge.source === currentId);
+        
+        outgoingEdges.forEach(edge => {
+            // إضافة الحافة إلى المسار
+            path.push({
+                edgeId: edge.id,
+                sourceId: edge.source,
+                targetId: edge.target,
+                type: 'downstream'
+            });
+            
+            // استمرار الاستكشاف بشكل تكراري
+            exploreDownstream(edge.target);
+        });
+    }
+    
+    exploreDownstream(nodeId);
+    return path;
+}
+
+/**
+ * إنشاء جدول لعناصر المسار المحدد
+ * @returns {string} HTML للجدول
+ */
+function generatePathTable() {
+    if (activePaths.length === 0) return '';
+    
+    // جمع معرفات العقد الفريدة في المسار
+    const nodeIds = new Set();
+    activePaths.forEach(pathSegment => {
+        nodeIds.add(pathSegment.sourceId);
+        nodeIds.add(pathSegment.targetId);
+    });
+    
+    // جمع بيانات العقد
+    const pathNodes = [];
+    nodeIds.forEach(nodeId => {
+        const node = networkData.nodes.find(n => n.id === nodeId);
+        if (node) {
+            pathNodes.push({
+                id: node.id,
+                name: node.data.label,
+                type: node.data.entityType,
+                data: node.data.sourceData
+            });
+        }
+    });
+    
+    // تصنيف العقد حسب النوع لتنظيم الجدول
+    const sources = pathNodes.filter(node => node.type === 'powerSource');
+    const panels = pathNodes.filter(node => node.type === 'panel');
+    const breakers = pathNodes.filter(node => node.type === 'circuitBreaker');
+    const loads = pathNodes.filter(node => node.type === 'load');
+    
+    // بناء HTML للجدول
+    let tableHtml = `
+        <h5 class="mt-4 mb-2"><i class="fas fa-route"></i> مسار التغذية</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>النوع</th>
+                        <th>الاسم</th>
+                        <th>التفاصيل</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    // إضافة مصادر الطاقة
+    sources.forEach(source => {
+        tableHtml += `
+            <tr>
+                <td><span class="badge bg-danger">مصدر طاقة</span></td>
+                <td>${source.name}</td>
+                <td>${source.data.voltage} فولت / ${source.data.total_ampacity || '-'} أمبير</td>
+            </tr>
+        `;
+    });
+    
+    // إضافة اللوحات
+    panels.forEach(panel => {
+        tableHtml += `
+            <tr>
+                <td><span class="badge bg-success">لوحة</span></td>
+                <td>${panel.name}</td>
+                <td>${panel.data.voltage} فولت / ${panel.data.ampacity || '-'} أمبير</td>
+            </tr>
+        `;
+    });
+    
+    // إضافة القواطع
+    breakers.forEach(breaker => {
+        tableHtml += `
+            <tr>
+                <td><span class="badge bg-warning text-dark">قاطع</span></td>
+                <td>${breaker.name}</td>
+                <td>${breaker.data.rated_current || '-'} أمبير / ${breaker.data.number_of_poles || '-'} قطب</td>
+            </tr>
+        `;
+    });
+    
+    // إضافة الأحمال
+    loads.forEach(load => {
+        tableHtml += `
+            <tr>
+                <td><span class="badge bg-primary">حمل</span></td>
+                <td>${load.name}</td>
+                <td>${load.data.ampacity || '-'} أمبير / ${load.data.power_factor || '-'} PF</td>
+            </tr>
+        `;
+    });
+    
+    tableHtml += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    return tableHtml;
 }
 
 // إضافة وظيفة عالمية لإظهار الاتصالات
