@@ -251,25 +251,28 @@ class ParentPanelChildSerializer(serializers.ModelSerializer):
         
         parent_panel = Panel.objects.get(id=parent_panel_id)
         
-        # إنشاء قاطع مغذي جديد إذا لم يتم تحديده
+        # التحقق من وجود القاطع المغذي واعتباره إجباريًا
         if not feeder_breaker_id:
-            # يمكن إنشاء قاطع تلقائي هنا أو إلزام المستخدم بتحديد قاطع
             raise serializers.ValidationError("يجب تحديد القاطع المغذي للوحة الفرعية")
         
-        feeder_breaker = CircuitBreaker.objects.get(id=feeder_breaker_id)
-        
-        # التأكد من أن القاطع المغذي ينتمي إلى اللوحة الأم
-        if feeder_breaker.panel != parent_panel:
-            raise serializers.ValidationError("القاطع المغذي لا ينتمي إلى اللوحة الأم المحددة")
-        
-        # إنشاء اللوحة الفرعية وربطها باللوحة الأم والقاطع المغذي
-        panel = Panel.objects.create(
-            parent_panel=parent_panel,
-            feeder_breaker=feeder_breaker,
-            **validated_data
-        )
-        
-        return panel
+        try:
+            feeder_breaker = CircuitBreaker.objects.get(id=feeder_breaker_id)
+            
+            # التأكد من أن القاطع المغذي ينتمي إلى اللوحة الأم
+            if feeder_breaker.panel != parent_panel:
+                raise serializers.ValidationError("القاطع المغذي لا ينتمي إلى اللوحة الأم المحددة")
+            
+            # إنشاء اللوحة الفرعية وربطها باللوحة الأم والقاطع المغذي
+            panel = Panel.objects.create(
+                parent_panel=parent_panel,
+                feeder_breaker=feeder_breaker,
+                **validated_data
+            )
+            
+            return panel
+            
+        except CircuitBreaker.DoesNotExist:
+            raise serializers.ValidationError("القاطع المغذي غير موجود")
 
 # سيريلايزر لإنشاء حمل جديد مرتبط بقاطع
 class BreakerLoadSerializer(serializers.ModelSerializer):

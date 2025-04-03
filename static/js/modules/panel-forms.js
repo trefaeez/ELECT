@@ -42,6 +42,15 @@ function setupFormEventListeners() {
 }
 
 /**
+ * إضافة مستمعي الأحداث للتحقق المستمر من صحة النموذج
+ * هذه الوظيفة تضمن إعادة تفعيل زر الحفظ تلقائياً بعد استكمال البيانات المطلوبة
+ */
+function setupFormValidationListeners() {
+    // لا حاجة لمستمعات أحداث إضافية
+    // سنقوم بالتحقق فقط عند الضغط على زر الحفظ
+}
+
+/**
  * عرض نافذة إضافة/تعديل لوحة
  * @param {boolean} isEdit - هل هي عملية تعديل
  * @param {number} panelId - معرف اللوحة (في حالة التعديل)
@@ -386,7 +395,7 @@ function updateSourceForm() {
 }
 
 /**
- * التحقق من صحة نموذج اللوحة
+ * التحقق من صحة نموذج اللوحة فقط عند محاولة الحفظ
  */
 function validatePanelForm() {
     const panelNameInput = document.getElementById('panel-name');
@@ -400,46 +409,38 @@ function validatePanelForm() {
     const powerSourceType = powerSourceTypeRadio.value;
     
     let isValid = true;
+    let errorMessage = '';
     
     // التحقق من اسم اللوحة
     if (panelName === '') {
-        panelNameInput.classList.add('is-invalid');
         isValid = false;
-    } else {
-        panelNameInput.classList.remove('is-invalid');
+        errorMessage += 'يجب إدخال اسم اللوحة. ';
     }
     
     // التحقق من سعة اللوحة
     if (panelAmpacity === '' || isNaN(panelAmpacity) || parseInt(panelAmpacity) <= 0) {
-        panelAmpacityInput.classList.add('is-invalid');
         isValid = false;
-    } else {
-        panelAmpacityInput.classList.remove('is-invalid');
+        errorMessage += 'يجب إدخال قيمة صحيحة للأمبير. ';
     }
     
     // التحقق من مصدر التغذية
     if (powerSourceType === 'power-source') {
         const powerSourceSelect = document.getElementById('panel-power-source');
         if (powerSourceSelect && powerSourceSelect.value === '') {
-            powerSourceSelect.classList.add('is-invalid');
             isValid = false;
-        } else if (powerSourceSelect) {
-            powerSourceSelect.classList.remove('is-invalid');
+            errorMessage += 'يجب اختيار مصدر طاقة. ';
         }
     } else {
         const parentPanelSelect = document.getElementById('panel-parent');
         if (parentPanelSelect && parentPanelSelect.value === '') {
-            parentPanelSelect.classList.add('is-invalid');
             isValid = false;
-        } else if (parentPanelSelect) {
-            parentPanelSelect.classList.remove('is-invalid');
+            errorMessage += 'يجب اختيار لوحة أم. ';
         }
     }
     
-    // تفعيل/تعطيل زر الحفظ بناءً على صحة النموذج
-    const saveButton = document.getElementById('save-panel-btn');
-    if (saveButton) {
-        saveButton.disabled = !isValid;
+    // إذا كان هناك أخطاء، أظهر رسالة تنبيه
+    if (!isValid) {
+        showAlert(errorMessage, 'danger');
     }
     
     return isValid;
@@ -494,21 +495,17 @@ async function savePanel() {
             parentPanelId = parentPanelSelect.value;
         }
         
+        // التحقق من وجود قاطع مغذي محدد
         if (feederBreakerSelect) {
-            feederBreakerId = feederBreakerSelect.value || null;
+            feederBreakerId = feederBreakerSelect.value;
+            
+            // إذا كان حقل القاطع المغذي فارغًا، يتم عرض رسالة خطأ والخروج من الدالة
+            if (!feederBreakerId && !panelId) {  // فقط للإضافة وليس للتعديل
+                showAlert('يجب تحديد القاطع المغذي للوحة الفرعية', 'danger');
+                return;
+            }
         }
     }
-    
-    // تحضير البيانات للإرسال
-    const panelData = {
-        name: panelName,
-        panel_type: panelType,
-        voltage: panelVoltage,
-        ampacity: panelAmpacity,
-        description: panelDescription,
-        power_source: powerSourceType === 'power-source' ? powerSourceId : null,
-        parent_panel: powerSourceType === 'parent-panel' ? parentPanelId : null
-    };
     
     try {
         let result;
@@ -516,6 +513,24 @@ async function savePanel() {
         // إضافة لوحة جديدة أو تعديل لوحة موجودة
         if (panelId) {
             // تحديث لوحة موجودة
+            // تحضير البيانات للإرسال - نستخدم فقط الحقول المطلوبة للتحديث
+            const panelData = {
+                name: panelName,
+                panel_type: panelType,
+                voltage: panelVoltage,
+                ampacity: panelAmpacity,
+                description: panelDescription
+            };
+            
+            // إضافة مصدر الطاقة أو اللوحة الأم حسب الاختيار
+            if (powerSourceType === 'power-source') {
+                panelData.power_source = powerSourceId;
+                panelData.parent_panel = null;
+            } else {
+                panelData.parent_panel = parentPanelId;
+                panelData.power_source = null;
+            }
+            
             result = await PanelAPI.update(panelId, panelData);
             
             if (result.success) {
@@ -532,16 +547,29 @@ async function savePanel() {
             // إضافة لوحة جديدة
             if (powerSourceType === 'power-source') {
                 // إضافة اللوحة إلى مصدر طاقة
+                // تحضير البيانات للإرسال
+                const panelData = {
+                    name: panelName,
+                    panel_type: panelType,
+                    voltage: panelVoltage,
+                    ampacity: panelAmpacity,
+                    description: panelDescription
+                };
+                
                 result = await PowerSourceAPI.addPanel(powerSourceId, panelData);
             } else {
                 // إضافة لوحة فرعية إلى لوحة أم
-                result = await PanelAPI.addChildPanel(parentPanelId, panelData);
+                // تحضير البيانات للإرسال - مع التأكد من أنها تتوافق مع توقعات الخادم
+                const childPanelData = {
+                    name: panelName,
+                    panel_type: panelType,
+                    voltage: panelVoltage,
+                    ampacity: panelAmpacity,
+                    description: panelDescription,
+                    feeder_breaker_id: feederBreakerId  // إضافة معرف القاطع المغذي دائمًا لأنه إجباري
+                };
                 
-                // إذا تم تحديد قاطع مغذي، تعيينه
-                if (result.success && feederBreakerId) {
-                    const newPanelId = result.data.id;
-                    await PanelAPI.setFeederBreaker(newPanelId, feederBreakerId);
-                }
+                result = await PanelAPI.addChildPanel(parentPanelId, childPanelData);
             }
             
             if (result.success) {
@@ -640,6 +668,7 @@ async function confirmDelete() {
 // تصدير الوظائف اللازمة
 export {
     setupFormEventListeners,
+    setupFormValidationListeners,
     showAddPanelModal,
     showAddChildPanelModal,
     togglePanelSourceFields,

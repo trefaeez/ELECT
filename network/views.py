@@ -188,6 +188,8 @@ class PanelViewSet(viewsets.ModelViewSet):
         elif request.method == 'POST':
             # استخدام السيريلايزر المخصص لإنشاء لوحة فرعية
             feeder_breaker_id = request.data.get('feeder_breaker_id')
+            
+            # التحقق من وجود القاطع المغذي (إجباري)
             if not feeder_breaker_id:
                 return Response({'error': 'يجب تحديد القاطع المغذي للوحة الفرعية'}, status=status.HTTP_400_BAD_REQUEST)
             
