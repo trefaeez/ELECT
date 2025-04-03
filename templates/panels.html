@@ -76,25 +76,8 @@
 
         <!-- وصف للصفحة -->
         <div class="alert alert-info mb-4">
-            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة اللوحات الكهربائية. يمكنك تصفية اللوحات حسب مصدر الطاقة ونوع اللوحة، وإضافة لوحات جديدة، وتنظيم الهيكل الشجري للوحات.
+            <i class="fas fa-info-circle"></i> في هذه الصفحة يمكنك إدارة اللوحات الكهربائية. يمكنك تصفية اللوحات حسب مصدر الطاقة ونوع اللوحة، وإضافة لوحات جديدة، وتعديل وحذف اللوحات الموجودة.
         </div>
-
-        <!-- قسم هيكل اللوحات الشجري -->
-        <section class="mb-5">
-            <h3 class="mb-3"><i class="fas fa-project-diagram text-success"></i> هيكل اللوحات</h3>
-            <div class="card">
-                <div class="card-body">
-                    <div id="panels-tree-view" class="tree-view">
-                        <!-- سيتم إضافة العناصر ديناميكياً -->
-                        <div class="text-center py-3">
-                            <div class="spinner-border text-success" role="status">
-                                <span class="visually-hidden">جاري التحميل...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
 
         <!-- قسم اللوحات -->
         <section class="mb-5">
@@ -176,22 +159,39 @@
                         </div>
                         
                         <!-- حقول مصدر الطاقة أو اللوحة الأم -->
+                        <div class="mb-3">
+                            <label class="form-label d-block">مصدر التغذية <span class="text-danger">*</span></label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="power-source-type" id="power-source-radio" value="power-source" checked>
+                                <label class="form-check-label" for="power-source-radio">
+                                    مصدر طاقة مباشر
+                                </label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="power-source-type" id="parent-panel-radio" value="parent-panel">
+                                <label class="form-check-label" for="parent-panel-radio">
+                                    لوحة أخرى
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- حقل مصدر الطاقة -->
                         <div class="mb-3" id="power-source-section">
                             <label for="panel-power-source" class="form-label">مصدر الطاقة <span class="text-danger">*</span></label>
                             <select class="form-select" id="panel-power-source">
-                                <option value="">-- اختر مصدر الطاقة --</option>
-                                <!-- سيتم إضافة الخيارات ديناميكياً -->
+                                <!-- سيتم ملء هذه القائمة بمصادر الطاقة المتاحة -->
                             </select>
-                            <div class="form-text">مطلوب للوحات الرئيسية فقط</div>
+                            <div class="form-text">اختر مصدر الطاقة الذي ستتصل به اللوحة مباشرة</div>
                         </div>
                         
+                        <!-- حقل اللوحة الأم -->
                         <div class="mb-3" id="parent-panel-section" style="display: none;">
                             <label for="panel-parent" class="form-label">اللوحة الأم <span class="text-danger">*</span></label>
                             <select class="form-select" id="panel-parent">
                                 <option value="">-- اختر اللوحة الأم --</option>
                                 <!-- سيتم إضافة الخيارات ديناميكياً -->
                             </select>
-                            <div class="form-text">مطلوب للوحات الفرعية والرئيسية الفرعية</div>
+                            <div class="form-text">اللوحة التي ستتصل بها هذه اللوحة</div>
                         </div>
                         
                         <div class="mb-3" id="feeder-breaker-section" style="display: none;">
