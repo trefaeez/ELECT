@@ -1104,38 +1104,42 @@ export class GoJSNetworkVisualizer {
             }
         }
         
-        // إضافة اللوحات
-        for (const panel of this.panels) {
-            this.nodeDataArray.push({
-                key: `panel_${panel.id}`,
-                category: "panel",
-                text: panel.name,
-                panel_type: panel.panel_type,
-                entityData: panel
-            });
-            
-            // روابط من اللوحة الرئيسية إلى اللوحات الفرعية
-            if (panel.panel_type === "sub" || panel.panel_type === "sub_main") {
-                const parentPanel = this.panels.find(p => p.id === panel.parent_panel);
-                if (parentPanel) {
-                    this.linkDataArray.push({
-                        from: `panel_${parentPanel.id}`,
-                        to: `panel_${panel.id}`
-                    });
-                }
-            }
+        // إضافة اللوحات والقواطع والأحمال بترتيب هرمي
+        // نقوم أولاً بإضافة اللوحات الرئيسية
+        const mainPanels = this.panels.filter(p => p.panel_type === 'main');
+        for (const mainPanel of mainPanels) {
+            this.addPanelWithBreakersAndSubpanels(mainPanel);
         }
         
-        // إضافة القواطع
-        for (const breaker of this.circuitBreakers) {
+        // إضافة اللوحات المتبقية التي ليس لها لوحة أب
+        const remainingPanels = this.panels.filter(p => 
+            p.panel_type !== 'main' && 
+            !p.parent_panel && 
+            !this.nodeDataArray.some(node => node.key === `panel_${p.id}`)
+        );
+        
+        for (const panel of remainingPanels) {
+            this.addPanelWithBreakersAndSubpanels(panel);
+        }
+        
+        // التأكد من إضافة جميع القواطع المتبقية
+        const addedBreakerIds = this.nodeDataArray
+            .filter(node => node.category === "circuitBreaker")
+            .map(node => parseInt(node.key.replace("breaker_", "")));
+        
+        const remainingBreakers = this.circuitBreakers.filter(b => 
+            !addedBreakerIds.includes(b.id)
+        );
+        
+        for (const breaker of remainingBreakers) {
             this.nodeDataArray.push({
                 key: `breaker_${breaker.id}`,
                 category: "circuitBreaker",
                 text: breaker.name || `قاطع ${breaker.id}`,
-                entityData: breaker
+                entityData: breaker,
+                group: breaker.panel ? `panel_${breaker.panel}` : undefined
             });
             
-            // روابط من اللوحة إلى القاطع
             if (breaker.panel) {
                 this.linkDataArray.push({
                     from: `panel_${breaker.panel}`,
@@ -1144,16 +1148,24 @@ export class GoJSNetworkVisualizer {
             }
         }
         
-        // إضافة الأحمال
-        for (const load of this.loads) {
+        // التأكد من إضافة جميع الأحمال المتبقية
+        const addedLoadIds = this.nodeDataArray
+            .filter(node => node.category === "load")
+            .map(node => parseInt(node.key.replace("load_", "")));
+        
+        const remainingLoads = this.loads.filter(l => 
+            !addedLoadIds.includes(l.id)
+        );
+        
+        for (const load of remainingLoads) {
             this.nodeDataArray.push({
                 key: `load_${load.id}`,
                 category: "load",
                 text: load.name,
-                entityData: load
+                entityData: load,
+                group: load.circuit_breaker ? `breaker_${load.circuit_breaker}` : undefined
             });
             
-            // روابط من القاطع إلى الحمل
             if (load.circuit_breaker) {
                 this.linkDataArray.push({
                     from: `breaker_${load.circuit_breaker}`,
@@ -1164,6 +1176,77 @@ export class GoJSNetworkVisualizer {
         
         // تطبيق البيانات على المخطط
         this.diagram.model = new this.go.GraphLinksModel(this.nodeDataArray, this.linkDataArray);
+    }
+    
+    /**
+     * إضافة لوحة مع القواطع واللوحات الفرعية الخاصة بها
+     * @param {Object} panel - بيانات اللوحة
+     * @private
+     */
+    addPanelWithBreakersAndSubpanels(panel) {
+        // إضافة اللوحة إذا لم تكن موجودة مسبقًا
+        if (!this.nodeDataArray.some(node => node.key === `panel_${panel.id}`)) {
+            this.nodeDataArray.push({
+                key: `panel_${panel.id}`,
+                category: "panel",
+                text: panel.name,
+                panel_type: panel.panel_type,
+                entityData: panel
+            });
+            
+            // إذا كانت اللوحة فرعية وتتبع للوحة أخرى
+            if (panel.parent_panel) {
+                this.linkDataArray.push({
+                    from: `panel_${panel.parent_panel}`,
+                    to: `panel_${panel.id}`
+                });
+            }
+        }
+        
+        // إضافة القواطع الخاصة باللوحة
+        const panelBreakers = this.circuitBreakers.filter(b => b.panel === panel.id);
+        for (const breaker of panelBreakers) {
+            if (!this.nodeDataArray.some(node => node.key === `breaker_${breaker.id}`)) {
+                this.nodeDataArray.push({
+                    key: `breaker_${breaker.id}`,
+                    category: "circuitBreaker",
+                    text: breaker.name || `قاطع ${breaker.id}`,
+                    entityData: breaker,
+                    group: `panel_${panel.id}`
+                });
+                
+                this.linkDataArray.push({
+                    from: `panel_${panel.id}`,
+                    to: `breaker_${breaker.id}`,
+                    color: "#ffaa00"
+                });
+                
+                // إضافة الأحمال المرتبطة بهذا القاطع
+                const breakerLoads = this.loads.filter(l => l.circuit_breaker === breaker.id);
+                for (const load of breakerLoads) {
+                    if (!this.nodeDataArray.some(node => node.key === `load_${load.id}`)) {
+                        this.nodeDataArray.push({
+                            key: `load_${load.id}`,
+                            category: "load",
+                            text: load.name,
+                            entityData: load,
+                            group: `breaker_${breaker.id}`
+                        });
+                        
+                        this.linkDataArray.push({
+                            from: `breaker_${breaker.id}`,
+                            to: `load_${load.id}`
+                        });
+                    }
+                }
+            }
+        }
+        
+        // إضافة اللوحات الفرعية التابعة لهذه اللوحة
+        const subPanels = this.panels.filter(p => p.parent_panel === panel.id);
+        for (const subPanel of subPanels) {
+            this.addPanelWithBreakersAndSubpanels(subPanel);
+        }
     }
     
     /**
