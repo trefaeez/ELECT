@@ -66,28 +66,72 @@ class PowerSourceViewSet(viewsets.ModelViewSet):
         GET: يجلب جميع اللوحات المرتبطة بمصدر طاقة
         POST: يضيف لوحة جديدة إلى مصدر طاقة محدد
         """
-        powersource = self.get_object()
-        
-        if request.method == 'GET':
-            # جلب اللوحات المرتبطة بمصدر الطاقة
-            panels = Panel.objects.filter(power_source=powersource)
-            serializer = PanelSerializer(panels, many=True)
-            return Response(serializer.data)
-        
-        elif request.method == 'POST':
-            # استخدام السيريلايزر المخصص لإنشاء لوحة لمصدر طاقة
-            serializer = PowerSourcePanelSerializer(
-                data=request.data,
-                context={'power_source_id': powersource.id}
-            )
+        try:
+            powersource = self.get_object()
             
-            if serializer.is_valid():
-                panel = serializer.save()
-                # إرجاع البيانات باستخدام السيريلايزر الكامل
-                panel_serializer = PanelSerializer(panel)
-                return Response(panel_serializer.data, status=status.HTTP_201_CREATED)
+            if request.method == 'GET':
+                # جلب اللوحات المرتبطة بمصدر الطاقة
+                panels = Panel.objects.filter(power_source=powersource)
+                serializer = PanelSerializer(panels, many=True)
+                return Response(serializer.data)
             
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            elif request.method == 'POST':
+                try:
+                    # طباعة بيانات الطلب للتشخيص
+                    print(f"POST data: {request.data}")
+                    
+                    # التحقق من البيانات الأساسية المطلوبة
+                    required_fields = ['name', 'ampacity', 'voltage']
+                    missing_fields = [field for field in required_fields if not request.data.get(field)]
+                    
+                    if missing_fields:
+                        missing_fields_str = ", ".join(missing_fields)
+                        return Response(
+                            {f: f"حقل {f} مطلوب" for f in missing_fields},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # استخدام السيريلايزر المخصص لإنشاء لوحة لمصدر طاقة
+                    serializer = PowerSourcePanelSerializer(
+                        data=request.data,
+                        context={'power_source_id': powersource.id}
+                    )
+                    
+                    if serializer.is_valid():
+                        panel = serializer.save()
+                        # إرجاع البيانات باستخدام السيريلايزر الكامل
+                        panel_serializer = PanelSerializer(panel)
+                        return Response(panel_serializer.data, status=status.HTTP_201_CREATED)
+                    
+                    # إرجاع أخطاء التحقق من صحة البيانات
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+                except serializers.ValidationError as ve:
+                    # إرجاع أخطاء التحقق من البيانات بتنسيق منظم
+                    return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
+                except Exception as e:
+                    # تسجيل تفاصيل الخطأ للمساعدة في التشخيص
+                    import traceback
+                    error_message = str(e)
+                    error_trace = traceback.format_exc()
+                    print(f"Error: {error_message}")
+                    print(f"Traceback: {error_trace}")
+                    
+                    # إرجاع رسالة خطأ واضحة للمستخدم
+                    return Response(
+                        {'error': f'حدث خطأ أثناء إنشاء اللوحة الجديدة: {error_message}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+        except PowerSource.DoesNotExist:
+            return Response({'error': 'مصدر الطاقة المحدد غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # تسجيل الخطأ العام
+            import traceback
+            print(f"General error: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])
     def set_main_breaker(self, request, pk=None):
@@ -147,28 +191,38 @@ class PanelViewSet(viewsets.ModelViewSet):
         GET: يجلب جميع القواطع المرتبطة باللوحة
         POST: يضيف قاطع جديد إلى اللوحة المحددة
         """
-        panel = self.get_object()
-        
-        if request.method == 'GET':
-            # جلب القواطع المرتبطة باللوحة
-            breakers = CircuitBreaker.objects.filter(panel=panel)
-            serializer = CircuitBreakerSerializer(breakers, many=True)
-            return Response(serializer.data)
-        
-        elif request.method == 'POST':
-            # استخدام السيريلايزر المخصص لإنشاء قاطع للوحة
-            serializer = PanelBreakerSerializer(
-                data=request.data,
-                context={'panel_id': panel.id}
-            )
+        try:
+            panel = self.get_object()
             
-            if serializer.is_valid():
-                breaker = serializer.save()
-                # إرجاع البيانات باستخدام السيريلايزر الكامل
-                breaker_serializer = CircuitBreakerSerializer(breaker)
-                return Response(breaker_serializer.data, status=status.HTTP_201_CREATED)
+            if request.method == 'GET':
+                # جلب القواطع المرتبطة باللوحة
+                breakers = CircuitBreaker.objects.filter(panel=panel)
+                serializer = CircuitBreakerSerializer(breakers, many=True)
+                return Response(serializer.data)
             
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            elif request.method == 'POST':
+                try:
+                    # استخدام السيريلايزر المخصص لإنشاء قاطع للوحة
+                    serializer = PanelBreakerSerializer(
+                        data=request.data,
+                        context={'panel_id': panel.id}
+                    )
+                    
+                    if serializer.is_valid():
+                        breaker = serializer.save()
+                        # إرجاع البيانات باستخدام السيريلايزر الكامل
+                        breaker_serializer = CircuitBreakerSerializer(breaker)
+                        return Response(breaker_serializer.data, status=status.HTTP_201_CREATED)
+                    
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                except Exception as e:
+                    return Response({'error': f'حدث خطأ أثناء إنشاء القاطع: {str(e)}'}, 
+                                   status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        except Panel.DoesNotExist:
+            return Response({'error': 'اللوحة المحددة غير موجودة'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get', 'post'])
     def child_panels(self, request, pk=None):
@@ -177,37 +231,49 @@ class PanelViewSet(viewsets.ModelViewSet):
         GET: يجلب جميع اللوحات الفرعية المباشرة
         POST: يضيف لوحة فرعية جديدة للوحة المحددة
         """
-        panel = self.get_object()
-        
-        if request.method == 'GET':
-            # جلب اللوحات الفرعية المباشرة
-            child_panels = panel.child_panels.all()
-            serializer = PanelSerializer(child_panels, many=True)
-            return Response(serializer.data)
-        
-        elif request.method == 'POST':
-            # استخدام السيريلايزر المخصص لإنشاء لوحة فرعية
-            feeder_breaker_id = request.data.get('feeder_breaker_id')
+        try:
+            panel = self.get_object()
             
-            # التحقق من وجود القاطع المغذي (إجباري)
-            if not feeder_breaker_id:
-                return Response({'error': 'يجب تحديد القاطع المغذي للوحة الفرعية'}, status=status.HTTP_400_BAD_REQUEST)
+            if request.method == 'GET':
+                # جلب اللوحات الفرعية المباشرة
+                child_panels = panel.child_panels.all()
+                serializer = PanelSerializer(child_panels, many=True)
+                return Response(serializer.data)
             
-            serializer = ParentPanelChildSerializer(
-                data=request.data,
-                context={
-                    'parent_panel_id': panel.id,
-                    'feeder_breaker_id': feeder_breaker_id
-                }
-            )
-            
-            if serializer.is_valid():
-                child_panel = serializer.save()
-                # إرجاع البيانات باستخدام السيريلايزر الكامل
-                panel_serializer = PanelSerializer(child_panel)
-                return Response(panel_serializer.data, status=status.HTTP_201_CREATED)
-            
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            elif request.method == 'POST':
+                # استخدام السيريلايزر المخصص لإنشاء لوحة فرعية
+                feeder_breaker_id = request.data.get('feeder_breaker_id')
+                
+                # التحقق من وجود القاطع المغذي (إجباري)
+                if not feeder_breaker_id:
+                    return Response({'error': 'يجب تحديد القاطع المغذي للوحة الفرعية'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                try:
+                    serializer = ParentPanelChildSerializer(
+                        data=request.data,
+                        context={
+                            'parent_panel_id': panel.id,
+                            'feeder_breaker_id': feeder_breaker_id
+                        }
+                    )
+                    
+                    if serializer.is_valid():
+                        child_panel = serializer.save()
+                        # إرجاع البيانات باستخدام السيريلايزر الكامل
+                        panel_serializer = PanelSerializer(child_panel)
+                        return Response(panel_serializer.data, status=status.HTTP_201_CREATED)
+                    
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                    
+                except CircuitBreaker.DoesNotExist:
+                    return Response({'error': 'القاطع المغذي غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+                except Exception as e:
+                    return Response({'error': f'حدث خطأ أثناء إنشاء اللوحة الفرعية: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
+        except Panel.DoesNotExist:
+            return Response({'error': 'اللوحة المحددة غير موجودة'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
     def all_child_panels(self, request, pk=None):
@@ -390,37 +456,50 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
         GET: يجلب جميع الأحمال المرتبطة بالقاطع
         POST: يضيف حمل جديد إلى القاطع المحدد
         """
-        breaker = self.get_object()
-        
-        if request.method == 'GET':
-            # جلب الأحمال المرتبطة بالقاطع
-            loads = Load.objects.filter(breaker=breaker)
-            serializer = LoadSerializer(loads, many=True)
-            return Response(serializer.data)
-        
-        elif request.method == 'POST':
-            # استخدام السيريلايزر المخصص لإنشاء حمل للقاطع
-            panel_id = request.data.get('panel_id', None)
+        try:
+            breaker = self.get_object()
             
-            # إذا لم يتم تحديد اللوحة، استخدم اللوحة المرتبطة بالقاطع
-            if not panel_id and breaker.panel:
-                panel_id = breaker.panel.id
+            if request.method == 'GET':
+                # جلب الأحمال المرتبطة بالقاطع
+                loads = Load.objects.filter(breaker=breaker)
+                serializer = LoadSerializer(loads, many=True)
+                return Response(serializer.data)
             
-            serializer = BreakerLoadSerializer(
-                data=request.data,
-                context={
-                    'breaker_id': breaker.id,
-                    'panel_id': panel_id
-                }
-            )
-            
-            if serializer.is_valid():
-                load = serializer.save()
-                # إرجاع البيانات باستخدام السيريلايزر الكامل
-                load_serializer = LoadSerializer(load)
-                return Response(load_serializer.data, status=status.HTTP_201_CREATED)
-            
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            elif request.method == 'POST':
+                try:
+                    # استخدام السيريلايزر المخصص لإنشاء حمل للقاطع
+                    panel_id = request.data.get('panel_id', None)
+                    
+                    # إذا لم يتم تحديد اللوحة، استخدم اللوحة المرتبطة بالقاطع
+                    if not panel_id and breaker.panel:
+                        panel_id = breaker.panel.id
+                    
+                    serializer = BreakerLoadSerializer(
+                        data=request.data,
+                        context={
+                            'breaker_id': breaker.id,
+                            'panel_id': panel_id
+                        }
+                    )
+                    
+                    if serializer.is_valid():
+                        load = serializer.save()
+                        # إرجاع البيانات باستخدام السيريلايزر الكامل
+                        load_serializer = LoadSerializer(load)
+                        return Response(load_serializer.data, status=status.HTTP_201_CREATED)
+                    
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                    
+                except Panel.DoesNotExist:
+                    return Response({'error': 'اللوحة المحددة غير موجودة'}, status=status.HTTP_404_NOT_FOUND)
+                except Exception as e:
+                    return Response({'error': f'حدث خطأ أثناء إنشاء الحمل: {str(e)}'}, 
+                                   status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
+        except CircuitBreaker.DoesNotExist:
+            return Response({'error': 'القاطع غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get', 'put'])
     def feeding_breakers(self, request, pk=None):
@@ -429,36 +508,51 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
         GET: يجلب جميع القواطع التي تغذي القاطع المحدد
         PUT: يحدث قائمة القواطع المغذية للقاطع المحدد
         """
-        breaker = self.get_object()
-        
-        if request.method == 'GET':
-            # جلب القواطع المغذية
-            feeding_breakers = breaker.feeding_breakers.all()
-            serializer = CircuitBreakerBasicSerializer(feeding_breakers, many=True)
-            return Response(serializer.data)
-        
-        elif request.method == 'PUT':
-            # تحديث قائمة القواطع المغذية
-            serializer = BreakerFeedingSerializer(breaker, data=request.data)
+        try:
+            breaker = self.get_object()
             
-            if serializer.is_valid():
-                serializer.save()
-                # إرجاع البيانات المحدثة باستخدام السيريلايزر الكامل
-                breaker_serializer = CircuitBreakerSerializer(breaker)
-                return Response(breaker_serializer.data)
+            if request.method == 'GET':
+                # جلب القواطع المغذية
+                feeding_breakers = breaker.feeding_breakers.all()
+                serializer = CircuitBreakerBasicSerializer(feeding_breakers, many=True)
+                return Response(serializer.data)
             
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            elif request.method == 'PUT':
+                try:
+                    # تحديث قائمة القواطع المغذية
+                    serializer = BreakerFeedingSerializer(breaker, data=request.data)
+                    
+                    if serializer.is_valid():
+                        serializer.save()
+                        # إرجاع البيانات المحدثة باستخدام السيريلايزر الكامل
+                        breaker_serializer = CircuitBreakerSerializer(breaker)
+                        return Response(breaker_serializer.data)
+                    
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                except Exception as e:
+                    return Response({'error': f'حدث خطأ أثناء تحديث القواطع المغذية: {str(e)}'}, 
+                                   status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        except CircuitBreaker.DoesNotExist:
+            return Response({'error': 'القاطع غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
     def fed_breakers(self, request, pk=None):
         """
         طريقة للحصول على القواطع التي يغذيها قاطع محدد
         """
-        breaker = self.get_object()
-        # جلب القواطع المغذاة
-        fed_breakers = breaker.fed_breakers.all()
-        serializer = CircuitBreakerBasicSerializer(fed_breakers, many=True)
-        return Response(serializer.data)
+        try:
+            breaker = self.get_object()
+            # جلب القواطع المغذاة
+            fed_breakers = breaker.fed_breakers.all()
+            serializer = CircuitBreakerBasicSerializer(fed_breakers, many=True)
+            return Response(serializer.data)
+        except CircuitBreaker.DoesNotExist:
+            return Response({'error': 'القاطع غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'])
     def by_panel(self, request):
@@ -476,6 +570,8 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         except Panel.DoesNotExist:
             return Response({'error': 'اللوحة غير موجودة'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'])
     def by_role(self, request):
@@ -495,9 +591,14 @@ class CircuitBreakerViewSet(viewsets.ModelViewSet):
         """
         طريقة للحصول على المسار الكامل للقاطع عبر سلسلة التغذية
         """
-        breaker = self.get_object()
-        path = breaker.get_full_path()
-        return Response({'full_path': path})
+        try:
+            breaker = self.get_object()
+            path = breaker.get_full_path()
+            return Response({'full_path': path})
+        except CircuitBreaker.DoesNotExist:
+            return Response({'error': 'القاطع غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
     def total_load(self, request, pk=None):

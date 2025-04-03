@@ -53,6 +53,30 @@
     <div class="container mt-4">
         <!-- قسم التنبيهات لعرض رسائل النجاح أو الفشل -->
         <div id="alerts-container"></div>
+        
+        <!-- معلومات اللوحة المحددة -->
+        <div id="selected-panel-info" class="border rounded p-3 mb-4 bg-light" style="display: none;">
+            <h3 class="mb-2">
+                <i class="fas fa-server text-success"></i> 
+                قواطع اللوحة: <span id="selected-panel-name" class="text-primary"></span>
+            </h3>
+            <div class="row">
+                <div class="col-md-4">
+                    <strong>النوع:</strong> <span id="selected-panel-type"></span>
+                </div>
+                <div class="col-md-4">
+                    <strong>الجهد:</strong> <span id="selected-panel-voltage"></span>
+                </div>
+                <div class="col-md-4">
+                    <strong>أمبير:</strong> <span id="selected-panel-ampacity"></span>
+                </div>
+            </div>
+            <div class="mt-2">
+                <a href="/panels" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-arrow-right"></i> العودة إلى اللوحات
+                </a>
+            </div>
+        </div>
 
         <!-- رأس الصفحة -->
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -62,7 +86,7 @@
                     <option value="">كل اللوحات</option>
                     <!-- سيتم إضافة الخيارات ديناميكياً -->
                 </select>
-                <button class="btn btn-warning" id="add-breaker-btn" disabled>
+                <button class="btn btn-warning" id="add-breaker-btn">
                     <i class="fas fa-plus"></i> إضافة قاطع
                 </button>
             </div>

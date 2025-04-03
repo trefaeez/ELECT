@@ -628,34 +628,37 @@ class Panel(models.Model, CableMixin):
         """
         # منع الدارات المغلقة في الهيكل الشجري
         if self.parent_panel:
-            # التحقق من أن اللوحة الأم ليست هي ذاتها أو لوحة فرعية من اللوحة الحالية
-            if self.parent_panel == self:
+            # التحقق من أن اللوحة الأم ليست هي ذاتها
+            if self.id and self.parent_panel.id == self.id:  # تحقق من وجود self.id (أي أنها لوحة موجودة)
                 raise ValidationError("لا يمكن تعيين اللوحة كأم لنفسها")
                 
             # التحقق من أن اللوحة الأم ليست فرعية من هذه اللوحة
-            parent = self.parent_panel
-            while parent:
-                if parent.parent_panel == self:
-                    raise ValidationError("يوجد دورة في هيكل اللوحات: اللوحة الأم هي أيضًا لوحة فرعية من هذه اللوحة")
-                parent = parent.parent_panel
+            # فقط إذا كانت اللوحة مخزنة مسبقاً (لها معرف)
+            if self.id:
+                parent = self.parent_panel
+                while parent:
+                    if parent.parent_panel and parent.parent_panel.id == self.id:
+                        raise ValidationError("يوجد دورة في هيكل اللوحات: اللوحة الأم هي أيضًا لوحة فرعية من هذه اللوحة")
+                    parent = parent.parent_panel
                 
         # التحقق من تناسق نوع اللوحة مع علاقاتها
         if self.panel_type == 'main':
             # اللوحة الرئيسية يجب أن تكون متصلة بمصدر طاقة وليس لوحة أم
             if not self.power_source:
-                raise ValidationError("اللوحة الرئيسية يجب أن تكون متصلة بمصدر طاقة")
+                raise ValidationError({"power_source": "اللوحة الرئيسية يجب أن تكون متصلة بمصدر طاقة"})
             if self.parent_panel:
-                raise ValidationError("اللوحة الرئيسية لا يمكن أن تكون متصلة بلوحة أم")
+                raise ValidationError({"parent_panel": "اللوحة الرئيسية لا يمكن أن تكون متصلة بلوحة أم"})
         else:
             # اللوحة الفرعية أو الرئيسية الفرعية يجب أن تكون متصلة بلوحة أم
             if not self.parent_panel:
-                raise ValidationError("اللوحة الفرعية يجب أن تكون متصلة بلوحة أم")
+                raise ValidationError({"parent_panel": "اللوحة الفرعية يجب أن تكون متصلة بلوحة أم"})
             if self.power_source:
-                raise ValidationError("اللوحة الفرعية لا يمكن أن تكون متصلة بمصدر طاقة مباشرة")
+                raise ValidationError({"power_source": "اللوحة الفرعية لا يمكن أن تكون متصلة بمصدر طاقة مباشرة"})
         
         # التحقق من أن اللوحة الفرعية العادية لا تحتوي على لوحات فرعية
-        if self.panel_type == 'sub' and self.child_panels.exists():
-            raise ValidationError("اللوحة الفرعية العادية لا يمكن أن تحتوي على لوحات فرعية. يجب تغيير نوعها إلى 'لوحة رئيسية فرعية'")
+        # فقط إذا كانت اللوحة مخزنة مسبقاً (لها معرف)
+        if self.id and self.panel_type == 'sub' and self.child_panels.exists():
+            raise ValidationError({"panel_type": "اللوحة الفرعية العادية لا يمكن أن تحتوي على لوحات فرعية. يجب تغيير نوعها إلى 'لوحة رئيسية فرعية'"})
     
     def save(self, *args, **kwargs):
         """

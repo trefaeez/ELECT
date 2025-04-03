@@ -46,44 +46,22 @@ function loadPanelsTable(panels) {
                 <td>${powerSourceInfo}</td>
                 <td class="small text-muted">${fullPath}</td>
                 <td class="action-buttons">
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                            الإجراءات
+                    <div class="btn-group" role="group">
+                        <a href="/breakers?panel=${panel.id}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-toggle-on"></i> القواطع
+                        </a>
+                        <button class="btn btn-sm btn-info view-panel" data-id="${panel.id}">
+                            <i class="fas fa-eye"></i> تفاصيل
                         </button>
-                        <ul class="dropdown-menu">
-                            <li>
-                                <a class="dropdown-item" href="/breakers?panel=${panel.id}">
-                                    <i class="fas fa-toggle-on"></i> القواطع
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item view-panel" href="#" data-id="${panel.id}">
-                                    <i class="fas fa-eye"></i> عرض التفاصيل
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item set-main-breaker" href="#" data-id="${panel.id}">
-                                    <i class="fas fa-plug"></i> تعيين القاطع الرئيسي
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item edit-panel" href="#" data-id="${panel.id}">
-                                    <i class="fas fa-edit"></i> تعديل
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item add-child-panel" href="#" data-id="${panel.id}">
-                                    <i class="fas fa-plus"></i> إضافة لوحة فرعية
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item text-danger delete-panel" href="#" data-id="${panel.id}" data-name="${panel.name}">
-                                    <i class="fas fa-trash"></i> حذف
-                                </a>
-                            </li>
-                        </ul>
+                        <button class="btn btn-sm btn-warning edit-panel" data-id="${panel.id}">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn btn-sm btn-success add-child-panel" data-id="${panel.id}">
+                            <i class="fas fa-plus"></i> لوحة فرعية
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-panel" data-id="${panel.id}" data-name="${panel.name}">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -103,35 +81,35 @@ function attachTableEventListeners() {
     document.querySelectorAll('.view-panel').forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            viewPanelDetails(e.target.closest('a').dataset.id);
+            viewPanelDetails(e.target.closest('button').dataset.id);
         });
     });
     
     document.querySelectorAll('.edit-panel').forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            showAddPanelModal(true, e.target.closest('a').dataset.id);
+            showAddPanelModal(true, e.target.closest('button').dataset.id);
         });
     });
     
     document.querySelectorAll('.add-child-panel').forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            showAddChildPanelModal(e.target.closest('a').dataset.id);
+            showAddChildPanelModal(e.target.closest('button').dataset.id);
         });
     });
     
     document.querySelectorAll('.set-main-breaker').forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            showSetMainBreakerModal(e.target.closest('a').dataset.id);
+            showSetMainBreakerModal(e.target.closest('button').dataset.id);
         });
     });
     
     document.querySelectorAll('.delete-panel').forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            const btn = e.target.closest('a');
+            const btn = e.target.closest('button');
             deletePanel(btn.dataset.id, btn.dataset.name);
         });
     });

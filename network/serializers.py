@@ -110,12 +110,16 @@ class PanelBreakerSerializer(serializers.ModelSerializer):
         if breaker_role == 'main':
             # التحقق مما إذا كانت اللوحة تحتوي بالفعل على قاطع رئيسي
             panel_id = self.context.get('panel_id')
-            panel = Panel.objects.get(id=panel_id)
             
-            if panel.main_breaker:
-                raise serializers.ValidationError(
-                    {"breaker_role": "هذه اللوحة تحتوي بالفعل على قاطع رئيسي. قم بتعديل القاطع الرئيسي الحالي أو استخدم دور آخر للقاطع الجديد"}
-                )
+            try:
+                panel = Panel.objects.get(id=panel_id)
+                
+                if panel.main_breaker:
+                    raise serializers.ValidationError(
+                        {"breaker_role": "هذه اللوحة تحتوي بالفعل على قاطع رئيسي. قم بتعديل القاطع الرئيسي الحالي أو استخدم دور آخر للقاطع الجديد"}
+                    )
+            except Panel.DoesNotExist:
+                raise serializers.ValidationError({"panel": "اللوحة المحددة غير موجودة"})
         
         return data
 
@@ -175,14 +179,27 @@ class BreakerFeedingSerializer(serializers.Serializer):
         if source_breaker.id == target_breaker.id:
             return True
         
-        # التحقق من القواطع التي يغذيها القاطع المصدر
-        for fed_breaker in source_breaker.fed_breakers.all():
-            if fed_breaker.id == target_breaker.id:
-                return True
-            if self._is_feeding_recursively(fed_breaker, target_breaker):
-                return True
+        # استخدام مجموعة للتتبع القواطع التي تم زيارتها بالفعل لتجنب الدورات الانهائية
+        visited = set()
         
-        return False
+        def check_feeding(current_breaker):
+            if current_breaker.id in visited:
+                return False
+                
+            visited.add(current_breaker.id)
+            
+            # التحقق من القواطع المباشرة
+            if target_breaker.id in [b.id for b in current_breaker.fed_breakers.all()]:
+                return True
+                
+            # التحقق من القواطع الفرعية
+            for fed_breaker in current_breaker.fed_breakers.all():
+                if check_feeding(fed_breaker):
+                    return True
+            
+            return False
+        
+        return check_feeding(source_breaker)
     
     def update(self, instance, validated_data):
         """تحديث علاقات التغذية للقاطع"""
@@ -203,21 +220,60 @@ class PowerSourcePanelSerializer(serializers.ModelSerializer):
         model = Panel
         exclude = ['power_source']  # استبعاد حقل power_source لأنه سيتم تحديده تلقائياً
 
+    def validate(self, data):
+        """التحقق من صحة البيانات للوحة الجديدة"""
+        # تحقق من صحة نوع اللوحة - يجب أن تكون رئيسية إذا كانت مرتبطة بمصدر طاقة
+        panel_type = data.get('panel_type', 'main')
+        if panel_type != 'main':
+            raise serializers.ValidationError({
+                'panel_type': 'اللوحة المرتبطة بمصدر طاقة يجب أن تكون من نوع رئيسية'
+            })
+
+        # التحقق من وجود الحقول المطلوبة
+        required_fields = ['name', 'ampacity', 'voltage']
+        for field in required_fields:
+            if field not in data:
+                raise serializers.ValidationError({
+                    field: f'حقل {field} مطلوب'
+                })
+
+        return data
+
     def create(self, validated_data):
         """إنشاء لوحة جديدة وربطها بمصدر الطاقة المحدد"""
         power_source_id = self.context.get('power_source_id')
         if not power_source_id:
-            raise serializers.ValidationError("يجب تحديد مصدر الطاقة")
+            raise serializers.ValidationError({"error": "يجب تحديد مصدر الطاقة"})
         
-        power_source = PowerSource.objects.get(id=power_source_id)
-        
-        # التأكد من أن اللوحة الجديدة مرتبطة بمصدر الطاقة وتعيين النوع كلوحة رئيسية
-        panel = Panel.objects.create(
-            power_source=power_source,
-            panel_type='main',  # تعيين كلوحة رئيسية لأنها متصلة بمصدر طاقة مباشرة
-            **validated_data
-        )
-        return panel
+        try:
+            power_source = PowerSource.objects.get(id=power_source_id)
+            
+            # التأكد من أن اللوحة الجديدة مرتبطة بمصدر الطاقة وتعيين النوع كلوحة رئيسية
+            # نتأكد أن نوع اللوحة هو 'main' بغض النظر عن القيمة المدخلة
+            validated_data['panel_type'] = 'main'
+            
+            # التأكد من أن اللوحة لا ترتبط بأي لوحة أم
+            validated_data.pop('parent_panel', None)
+            validated_data.pop('feeder_breaker', None)
+            
+            panel = Panel.objects.create(
+                power_source=power_source,
+                **validated_data
+            )
+            return panel
+        except PowerSource.DoesNotExist:
+            raise serializers.ValidationError({"power_source_id": "مصدر الطاقة المحدد غير موجود"})
+        except Exception as e:
+            # تحسين رسالة الخطأ لتوفير المزيد من التفاصيل
+            error_message = str(e)
+            if 'duplicate key value' in error_message.lower():
+                raise serializers.ValidationError({"name": "توجد لوحة بنفس الاسم بالفعل"})
+            elif 'not null constraint' in error_message.lower():
+                # استخراج اسم الحقل المسبب للخطأ من رسالة الخطأ
+                field_name = error_message.split('column "')[1].split('"')[0] if 'column "' in error_message else 'unknown field'
+                raise serializers.ValidationError({field_name: f"حقل {field_name} مطلوب"})
+            else:
+                raise serializers.ValidationError({"error": f"حدث خطأ أثناء إنشاء اللوحة: {error_message}"})
 
 # سيريلايزر لإنشاء لوحة فرعية مرتبطة بلوحة أم
 class ParentPanelChildSerializer(serializers.ModelSerializer):
@@ -247,32 +303,36 @@ class ParentPanelChildSerializer(serializers.ModelSerializer):
         feeder_breaker_id = self.context.get('feeder_breaker_id')
         
         if not parent_panel_id:
-            raise serializers.ValidationError("يجب تحديد اللوحة الأم")
-        
-        parent_panel = Panel.objects.get(id=parent_panel_id)
-        
-        # التحقق من وجود القاطع المغذي واعتباره إجباريًا
-        if not feeder_breaker_id:
-            raise serializers.ValidationError("يجب تحديد القاطع المغذي للوحة الفرعية")
+            raise serializers.ValidationError({"error": "يجب تحديد اللوحة الأم"})
         
         try:
-            feeder_breaker = CircuitBreaker.objects.get(id=feeder_breaker_id)
+            parent_panel = Panel.objects.get(id=parent_panel_id)
             
-            # التأكد من أن القاطع المغذي ينتمي إلى اللوحة الأم
-            if feeder_breaker.panel != parent_panel:
-                raise serializers.ValidationError("القاطع المغذي لا ينتمي إلى اللوحة الأم المحددة")
+            # التحقق من وجود القاطع المغذي واعتباره إجباريًا
+            if not feeder_breaker_id:
+                raise serializers.ValidationError({"feeder_breaker_id": "يجب تحديد القاطع المغذي للوحة الفرعية"})
             
-            # إنشاء اللوحة الفرعية وربطها باللوحة الأم والقاطع المغذي
-            panel = Panel.objects.create(
-                parent_panel=parent_panel,
-                feeder_breaker=feeder_breaker,
-                **validated_data
-            )
-            
-            return panel
-            
-        except CircuitBreaker.DoesNotExist:
-            raise serializers.ValidationError("القاطع المغذي غير موجود")
+            try:
+                feeder_breaker = CircuitBreaker.objects.get(id=feeder_breaker_id)
+                
+                # التأكد من أن القاطع المغذي ينتمي إلى اللوحة الأم
+                if feeder_breaker.panel != parent_panel:
+                    raise serializers.ValidationError({"feeder_breaker_id": "القاطع المغذي لا ينتمي إلى اللوحة الأم المحددة"})
+                
+                # إنشاء اللوحة الفرعية وربطها باللوحة الأم والقاطع المغذي
+                panel = Panel.objects.create(
+                    parent_panel=parent_panel,
+                    feeder_breaker=feeder_breaker,
+                    **validated_data
+                )
+                
+                return panel
+                
+            except CircuitBreaker.DoesNotExist:
+                raise serializers.ValidationError({"feeder_breaker_id": "القاطع المغذي غير موجود"})
+        
+        except Panel.DoesNotExist:
+            raise serializers.ValidationError({"parent_panel_id": "اللوحة الأم غير موجودة"})
 
 # سيريلايزر لإنشاء حمل جديد مرتبط بقاطع
 class BreakerLoadSerializer(serializers.ModelSerializer):
@@ -290,25 +350,32 @@ class BreakerLoadSerializer(serializers.ModelSerializer):
         panel_id = self.context.get('panel_id')
         
         if not breaker_id:
-            raise serializers.ValidationError("يجب تحديد القاطع")
+            raise serializers.ValidationError({"error": "يجب تحديد القاطع"})
         
-        breaker = CircuitBreaker.objects.get(id=breaker_id)
-        
-        # للتأكد من الاتساق، نتحقق من وجود اللوحة التي ينتمي إليها القاطع
-        if panel_id:
-            panel = Panel.objects.get(id=panel_id)
-        elif breaker.panel:
-            panel = breaker.panel
-        else:
-            raise serializers.ValidationError("لا يمكن إضافة حمل لقاطع غير مرتبط بلوحة")
-        
-        # إنشاء الحمل مع ربطه بالقاطع واللوحة
-        load = Load.objects.create(
-            breaker=breaker,
-            panel=panel,
-            **validated_data
-        )
-        return load
+        try:
+            breaker = CircuitBreaker.objects.get(id=breaker_id)
+            
+            # للتأكد من الاتساق، نتحقق من وجود اللوحة التي ينتمي إليها القاطع
+            try:
+                if panel_id:
+                    panel = Panel.objects.get(id=panel_id)
+                elif breaker.panel:
+                    panel = breaker.panel
+                else:
+                    raise serializers.ValidationError({"panel": "لا يمكن إضافة حمل لقاطع غير مرتبط بلوحة"})
+                
+                # إنشاء الحمل مع ربطه بالقاطع واللوحة
+                load = Load.objects.create(
+                    breaker=breaker,
+                    panel=panel,
+                    **validated_data
+                )
+                return load
+            except Panel.DoesNotExist:
+                raise serializers.ValidationError({"panel": "اللوحة المحددة غير موجودة"})
+                
+        except CircuitBreaker.DoesNotExist:
+            raise serializers.ValidationError({"breaker": "القاطع المحدد غير موجود"})
 
 # فئة المُسلسل الخاصة بمصادر الطاقة (PowerSource)
 class PowerSourceSerializer(serializers.ModelSerializer):

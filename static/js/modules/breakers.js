@@ -8,6 +8,7 @@ import { CircuitBreakerAPI, PanelAPI } from '../api_endpoints.js';
 
 // تهيئة المتغيرات
 let selectedPanelId = null;
+let selectedPanelData = null;
 
 // تهيئة الصفحة عند التحميل
 document.addEventListener('DOMContentLoaded', function() {
@@ -16,7 +17,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // تحميل البيانات الأولية
     loadPanelsDropdown();
-    loadBreakers();
     
     // إضافة مستمعي الأحداث
     setupEventListeners();
@@ -31,6 +31,11 @@ function checkUrlParams() {
     
     if (panelId) {
         selectedPanelId = panelId;
+        // تحميل بيانات اللوحة المحددة
+        loadPanelDetails(panelId);
+    } else {
+        // إذا لم يكن هناك لوحة محددة، قم بتحميل جميع القواطع
+        loadBreakers();
     }
 }
 
@@ -39,21 +44,123 @@ function checkUrlParams() {
  */
 function setupEventListeners() {
     // فلترة القواطع حسب اللوحة
-    document.getElementById('breaker-filter-panel').addEventListener('change', function() {
-        selectedPanelId = this.value;
-        loadBreakers(selectedPanelId);
-        
-        // تفعيل/تعطيل زر إضافة قاطع
-        const addBreakerBtn = document.getElementById('add-breaker-btn');
-        addBreakerBtn.disabled = !selectedPanelId;
-    });
+    const filterPanel = document.getElementById('breaker-filter-panel');
+    if (filterPanel) {
+        filterPanel.addEventListener('change', function() {
+            selectedPanelId = this.value;
+            
+            if (selectedPanelId) {
+                // تحميل بيانات اللوحة المحددة
+                loadPanelDetails(selectedPanelId);
+            } else {
+                // إذا تم اختيار "كل اللوحات"، إخفاء معلومات اللوحة المحددة
+                const panelInfoDiv = document.getElementById('selected-panel-info');
+                if (panelInfoDiv) {
+                    panelInfoDiv.style.display = 'none';
+                }
+                
+                // تحميل جميع القواطع
+                loadBreakers();
+            }
+            
+            // تفعيل/تعطيل زر إضافة قاطع
+            const addBreakerBtn = document.getElementById('add-breaker-btn');
+            if (addBreakerBtn) {
+                addBreakerBtn.disabled = !selectedPanelId;
+            }
+        });
+    }
     
     // إضافة قاطع جديد
-    document.getElementById('add-breaker-btn').addEventListener('click', showAddBreakerModal);
-    document.getElementById('save-breaker-btn').addEventListener('click', saveBreaker);
+    const addBreakerBtn = document.getElementById('add-breaker-btn');
+    if (addBreakerBtn) {
+        addBreakerBtn.addEventListener('click', showAddBreakerModal);
+    }
+    
+    const saveBreakerBtn = document.getElementById('save-breaker-btn');
+    if (saveBreakerBtn) {
+        saveBreakerBtn.addEventListener('click', saveBreaker);
+    }
     
     // زر تأكيد الحذف
-    document.getElementById('confirm-delete-btn').addEventListener('click', confirmDelete);
+    const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', confirmDelete);
+    }
+}
+
+/**
+ * تحميل تفاصيل اللوحة المحددة
+ * @param {number} panelId - معرف اللوحة
+ */
+async function loadPanelDetails(panelId) {
+    try {
+        const result = await PanelAPI.getById(panelId);
+        
+        if (result.success) {
+            selectedPanelData = result.data;
+            
+            // عرض معلومات اللوحة المحددة
+            updateSelectedPanelInfo(selectedPanelData);
+            
+            // تحميل قواطع اللوحة المحددة
+            loadBreakers(panelId);
+        } else {
+            showAlert(`فشل تحميل بيانات اللوحة: ${result.error.message}`, 'danger');
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل بيانات اللوحة:', error);
+        showAlert('حدث خطأ غير متوقع أثناء تحميل بيانات اللوحة', 'danger');
+    }
+}
+
+/**
+ * تحديث معلومات اللوحة المحددة
+ * @param {Object} panelData - بيانات اللوحة
+ */
+function updateSelectedPanelInfo(panelData) {
+    const panelInfoDiv = document.getElementById('selected-panel-info');
+    if (!panelInfoDiv) return;
+    
+    // تحديث محتوى العناصر
+    const panelName = document.getElementById('selected-panel-name');
+    const panelType = document.getElementById('selected-panel-type');
+    const panelVoltage = document.getElementById('selected-panel-voltage');
+    const panelAmpacity = document.getElementById('selected-panel-ampacity');
+    
+    if (panelName) panelName.textContent = panelData.name || `لوحة #${panelData.id}`;
+    
+    // عرض نوع اللوحة بشكل مناسب
+    const panelTypes = {
+        'main': 'لوحة رئيسية',
+        'sub_main': 'لوحة رئيسية فرعية',
+        'sub': 'لوحة فرعية'
+    };
+    if (panelType) panelType.textContent = panelTypes[panelData.panel_type] || panelData.panel_type;
+    
+    // عرض الجهد بشكل مناسب
+    const voltageTypes = {
+        '220': '220 فولت',
+        '380': '380 فولت',
+        '11KV': '11 كيلو فولت',
+        '24': '24 فولت'
+    };
+    if (panelVoltage) panelVoltage.textContent = voltageTypes[panelData.voltage] || panelData.voltage;
+    
+    if (panelAmpacity) panelAmpacity.textContent = `${panelData.ampacity} أمبير`;
+    
+    // عرض الكتلة
+    panelInfoDiv.style.display = 'block';
+    
+    // تحديث عنوان الصفحة
+    document.title = `قواطع لوحة ${panelData.name} - نظام إدارة شبكة الطاقة الكهربائية`;
+    
+    // تغيير نص زر الإضافة
+    const addBreakerBtn = document.getElementById('add-breaker-btn');
+    if (addBreakerBtn) {
+        addBreakerBtn.textContent = `إضافة قاطع للوحة ${panelData.name}`;
+        addBreakerBtn.disabled = false;
+    }
 }
 
 /**
@@ -63,6 +170,8 @@ function setupEventListeners() {
  */
 function showAlert(message, type = 'success') {
     const alertsContainer = document.getElementById('alerts-container');
+    if (!alertsContainer) return;
+    
     const alertId = `alert-${Date.now()}`;
     
     const alertHTML = `
@@ -107,13 +216,14 @@ async function loadPanelsDropdown() {
  */
 function updatePanelsDropdown(panels) {
     const dropdown = document.getElementById('breaker-filter-panel');
+    if (!dropdown) return;
     
     // الحفاظ على خيار "الكل" في المقدمة
     let options = '<option value="">كل اللوحات</option>';
     
     panels.forEach(panel => {
         // إضافة معلومات مصدر الطاقة إلى اسم اللوحة لتسهيل التمييز
-        const powerSourceName = panel.power_source_details ? ` (${panel.power_source_details.name})` : '';
+        const powerSourceName = panel.power_source ? ` (${panel.power_source.name})` : '';
         const panelText = `${panel.name || `لوحة #${panel.id}`}${powerSourceName}`;
         
         const selected = selectedPanelId && selectedPanelId == panel.id ? 'selected' : '';
@@ -122,13 +232,15 @@ function updatePanelsDropdown(panels) {
     
     dropdown.innerHTML = options;
     
-    // تفعيل زر إضافة قاطع إذا تم تحديد لوحة
-    const addBreakerBtn = document.getElementById('add-breaker-btn');
-    addBreakerBtn.disabled = !selectedPanelId;
-    
     // تحديث القائمة المنسدلة إذا تم تحديد لوحة من خلال الـ URL
     if (selectedPanelId) {
         dropdown.value = selectedPanelId;
+        
+        // تفعيل زر إضافة قاطع
+        const addBreakerBtn = document.getElementById('add-breaker-btn');
+        if (addBreakerBtn) {
+            addBreakerBtn.disabled = false;
+        }
     }
 }
 
@@ -139,30 +251,40 @@ function updatePanelsDropdown(panels) {
 async function loadBreakers(panelId = null) {
     try {
         const tableBody = document.getElementById('breakers-table-body');
-        tableBody.innerHTML = '<tr><td colspan="7" class="text-center">جاري التحميل... <div class="loading-spinner"></div></td></tr>';
+        if (!tableBody) return;
+        
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center">
+                    <div class="spinner-border text-warning" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                </td>
+            </tr>
+        `;
         
         let result;
         
         if (panelId) {
             // تحميل القواطع المرتبطة بلوحة محددة
-            // هنا لابد من استخدام PanelAPI.getBreakers حيث لا يوجد تعديل مطلوب
             result = await PanelAPI.getBreakers(panelId);
         } else {
             // تحميل جميع القواطع
-            // استخدام مسار API الصحيح من خلال CircuitBreakerAPI التي تم تعديلها
             result = await CircuitBreakerAPI.getAll();
         }
         
         if (result.success) {
             updateBreakersTable(result.data);
         } else {
-            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">حدث خطأ أثناء تحميل البيانات</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">حدث خطأ أثناء تحميل البيانات</td></tr>';
             showAlert(`فشل تحميل القواطع: ${result.error.message}`, 'danger');
         }
     } catch (error) {
         console.error('خطأ في تحميل القواطع:', error);
-        document.getElementById('breakers-table-body').innerHTML = 
-            '<tr><td colspan="7" class="text-center text-danger">حدث خطأ غير متوقع</td></tr>';
+        const tableBody = document.getElementById('breakers-table-body');
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">حدث خطأ غير متوقع</td></tr>';
+        }
         showAlert('حدث خطأ غير متوقع أثناء تحميل القواطع', 'danger');
     }
 }
@@ -173,43 +295,61 @@ async function loadBreakers(panelId = null) {
  */
 function updateBreakersTable(breakers) {
     const tableBody = document.getElementById('breakers-table-body');
+    if (!tableBody) return;
     
     if (breakers.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="7" class="text-center">لا توجد قواطع مسجلة</td></tr>';
+        if (selectedPanelId) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center">
+                        لا توجد قواطع في هذه اللوحة
+                        <br>
+                        <button class="btn btn-warning mt-2" onclick="document.getElementById('add-breaker-btn').click()">
+                            <i class="fas fa-plus"></i> إضافة قاطع جديد
+                        </button>
+                    </td>
+                </tr>
+            `;
+        } else {
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center">لا توجد قواطع مسجلة</td></tr>';
+        }
         return;
     }
     
     let tableHTML = '';
     
     breakers.forEach(breaker => {
-        // استخراج معلومات اللوحة
-        const panelName = breaker.panel_details ? breaker.panel_details.name || `لوحة #${breaker.panel_details.id}` : '-';
+        // استخراج بيانات القاطع
+        const breakerName = breaker.name || `قاطع #${breaker.id}`;
+        const breakerType = breaker.breaker_type || '-';
+        const breakerRole = breaker.role_display || breaker.breaker_role || '-';
+        const poles = breaker.number_of_poles || '-';
+        const ratedCurrent = breaker.rated_current || '-';
         
-        // حساب عدد الأحمال المرتبطة
-        const loadsCount = breaker.loads_count || 0;
+        // بيانات اللوحة
+        const panelName = breaker.panel_name || (breaker.panel ? breaker.panel.name : '-');
         
         tableHTML += `
             <tr data-id="${breaker.id}">
                 <td>${breaker.id}</td>
-                <td>${breaker.name || `قاطع #${breaker.id}`}</td>
-                <td>${breaker.ampacity} A</td>
-                <td>${breaker.type || '-'}</td>
+                <td>${breakerName}</td>
+                <td>${breakerType}</td>
+                <td>${breakerRole}</td>
+                <td>${poles}</td>
+                <td>${ratedCurrent} A</td>
                 <td>${panelName}</td>
-                <td>
-                    <span class="badge ${loadsCount > 0 ? 'bg-primary' : 'bg-secondary'}">
-                        ${loadsCount} حمل
-                    </span>
-                </td>
                 <td class="action-buttons">
-                    <a href="/loads?breaker=${breaker.id}" class="btn btn-sm btn-primary view-loads">
-                        <i class="fas fa-lightbulb"></i> عرض الأحمال
-                    </a>
-                    <button class="btn btn-sm btn-info edit-breaker" data-id="${breaker.id}">
-                        <i class="fas fa-edit"></i> تعديل
-                    </button>
-                    <button class="btn btn-sm btn-danger delete-breaker" data-id="${breaker.id}" data-name="${breaker.name || `قاطع #${breaker.id}`}">
-                        <i class="fas fa-trash"></i> حذف
-                    </button>
+                    <div class="btn-group" role="group">
+                        <a href="/loads?breaker=${breaker.id}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-lightbulb"></i> الأحمال
+                        </a>
+                        <button class="btn btn-sm btn-warning edit-breaker" data-id="${breaker.id}">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-breaker" data-id="${breaker.id}" data-name="${breakerName}">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -234,12 +374,31 @@ function updateBreakersTable(breakers) {
  * إظهار مودال إضافة قاطع جديد
  */
 function showAddBreakerModal() {
+    // تهيئة عنوان المودال حسب اللوحة المحددة
+    const modalTitle = document.getElementById('addBreakerModalLabel');
+    if (modalTitle && selectedPanelData) {
+        modalTitle.textContent = `إضافة قاطع للوحة ${selectedPanelData.name}`;
+    } else {
+        modalTitle.textContent = 'إضافة قاطع جديد';
+    }
+    
     // تحضير المودال وتحديد اللوحة المحددة
-    document.getElementById('breaker-panel-id').value = selectedPanelId;
+    const breakerPanelIdInput = document.getElementById('breaker-panel-id');
+    if (breakerPanelIdInput) {
+        breakerPanelIdInput.value = selectedPanelId;
+    }
+    
+    // إضافة معلومات اللوحة إلى المودال
+    const alertElement = document.querySelector('#addBreakerModal .alert-info');
+    if (alertElement && selectedPanelData) {
+        alertElement.textContent = `سيتم إضافة القاطع إلى اللوحة "${selectedPanelData.name}"`;
+    }
     
     // إظهار المودال
     const modal = new bootstrap.Modal(document.getElementById('addBreakerModal'));
-    modal.show();
+    if (modal) {
+        modal.show();
+    }
 }
 
 /**
@@ -260,18 +419,18 @@ async function saveBreaker() {
         return;
     }
     
-    if (!name || !ratedCurrent) {
-        showAlert('يرجى ملء جميع الحقول المطلوبة', 'warning');
+    if (!ratedCurrent) {
+        showAlert('يرجى إدخال التيار المقنن للقاطع', 'warning');
         return;
     }
     
     // تحضير البيانات للإرسال
     const breakerData = {
-        name: name,
-        type: type,
-        poles: parseInt(poles),
-        ampacity: parseFloat(ratedCurrent),
-        trip_curve: tripCurve
+        name: name || null,
+        breaker_type: type,
+        number_of_poles: parseInt(poles),
+        rated_current: parseFloat(ratedCurrent),
+        trip_curve: tripCurve || 'C'
     };
     
     try {
@@ -281,13 +440,18 @@ async function saveBreaker() {
         if (result.success) {
             // إغلاق المودال
             const modal = bootstrap.Modal.getInstance(document.getElementById('addBreakerModal'));
-            modal.hide();
+            if (modal) {
+                modal.hide();
+            }
             
             // مسح البيانات من النموذج
-            document.getElementById('add-breaker-form').reset();
+            const form = document.getElementById('add-breaker-form');
+            if (form) {
+                form.reset();
+            }
             
             // إظهار رسالة نجاح
-            showAlert('تم إضافة القاطع بنجاح');
+            showAlert('تم إضافة القاطع بنجاح', 'success');
             
             // إعادة تحميل البيانات
             await loadBreakers(panelId);
@@ -318,11 +482,16 @@ function deleteBreaker(id, name) {
     window.deleteItemId = id;
     
     // تحديث نص مودال التأكيد
-    document.getElementById('delete-item-name').textContent = `القاطع "${name}"`;
+    const deleteItemNameSpan = document.getElementById('delete-item-name');
+    if (deleteItemNameSpan) {
+        deleteItemNameSpan.textContent = `القاطع "${name}"`;
+    }
     
     // إظهار مودال التأكيد
     const confirmModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-    confirmModal.show();
+    if (confirmModal) {
+        confirmModal.show();
+    }
 }
 
 /**
@@ -333,13 +502,15 @@ async function confirmDelete() {
     
     // إغلاق المودال
     const modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
-    modal.hide();
+    if (modal) {
+        modal.hide();
+    }
     
     try {
         const result = await CircuitBreakerAPI.delete(id);
         
         if (result.success) {
-            showAlert('تم حذف القاطع بنجاح');
+            showAlert('تم حذف القاطع بنجاح', 'success');
             await loadBreakers(selectedPanelId);
         } else {
             showAlert(`فشل حذف القاطع: ${result.error.message}`, 'danger');
