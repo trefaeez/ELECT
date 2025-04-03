@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عرض تفاعلي للشبكة الكهربائية</title>
+    
+    <!-- تضمين مكتبة Bootstrap للتنسيق -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- تضمين Bootstrap RTL للدعم العربي -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
+    <!-- تضمين Font Awesome للأيقونات -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- تضمين مكتبات React وReactDOM -->
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    
+    <!-- تضمين مكتبة ReactFlow -->
+    <link href="https://unpkg.com/reactflow/dist/style.css" rel="stylesheet" />
+    <script src="https://unpkg.com/reactflow/dist/umd/reactflow.min.js"></script>
+    
+    <!-- تضمين مكتبة html2canvas لتصدير المخطط كصورة -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        .network-container {
+            width: 100%;
+            height: 80vh;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            position: relative;
+        }
+        
+        .controls-container {
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .details-panel {
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+            min-height: 200px;
+        }
+        
+        .network-legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+            margin-left: 8px;
+        }
+        
+        .node-details-table td {
+            padding: 5px 10px;
+        }
+        
+        .node-details-table td:first-child {
+            font-weight: bold;
+            width: 40%;
+        }
+        
+        .custom-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+            display: flex;
+            gap: 5px;
+        }
+        
+        .loading-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #0d6efd;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- شريط التنقل العلوي -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-bolt"></i> عرض تفاعلي للشبكة الكهربائية
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/static/index.html">
+                            <i class="fas fa-home"></i> الرئيسية
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">
+                            <i class="fas fa-project-diagram"></i> الشبكة التفاعلية
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="controls-container">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h2 class="mb-0"><i class="fas fa-project-diagram text-primary"></i> مخطط الشبكة الكهربائية التفاعلي</h2>
+                        <div>
+                            <button id="btnExportImage" class="btn btn-success">
+                                <i class="fas fa-file-image"></i> تصدير كصورة
+                            </button>
+                            <button id="btnResetView" class="btn btn-secondary ms-2">
+                                <i class="fas fa-sync-alt"></i> إعادة ضبط العرض
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-9">
+                <!-- حاوية مخطط الشبكة -->
+                <div id="networkContainer" class="network-container">
+                    <!-- سيتم إضافة ReactFlow هنا -->
+                    
+                    <!-- مؤشر التحميل -->
+                    <div id="loadingIndicator" class="loading-indicator">
+                        <div class="spinner"></div>
+                    </div>
+                    
+                    <!-- مفتاح الألوان -->
+                    <div class="network-legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #dc3545;"></div>
+                            <span>مصادر الطاقة</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #198754;"></div>
+                            <span>اللوحات الكهربائية</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #ffc107;"></div>
+                            <span>القواطع الكهربائية</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #0d6efd;"></div>
+                            <span>الأحمال الكهربائية</span>
+                        </div>
+                    </div>
+                    
+                    <!-- أزرار التحكم المخصصة -->
+                    <div class="custom-controls">
+                        <button id="btnZoomIn" class="btn btn-light btn-sm" title="تكبير">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button id="btnZoomOut" class="btn btn-light btn-sm" title="تصغير">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <button id="btnFitView" class="btn btn-light btn-sm" title="ملاءمة العرض">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-3">
+                <!-- لوحة تفاصيل العنصر المحدد -->
+                <div id="detailsPanel" class="details-panel">
+                    <h4 id="detailsTitle">تفاصيل العنصر المحدد</h4>
+                    <hr>
+                    <div id="detailsContent">
+                        <p class="text-muted">انقر على أي عنصر في المخطط لعرض تفاصيله هنا.</p>
+                    </div>
+                </div>
+                
+                <!-- فلاتر العرض -->
+                <div class="details-panel mt-3">
+                    <h4><i class="fas fa-filter"></i> فلاتر العرض</h4>
+                    <hr>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showPowerSources" checked>
+                        <label class="form-check-label" for="showPowerSources">عرض مصادر الطاقة</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showPanels" checked>
+                        <label class="form-check-label" for="showPanels">عرض اللوحات الكهربائية</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showBreakers" checked>
+                        <label class="form-check-label" for="showBreakers">عرض القواطع الكهربائية</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showLoads" checked>
+                        <label class="form-check-label" for="showLoads">عرض الأحمال الكهربائية</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- تذييل الصفحة -->
+    <footer class="text-center text-muted mt-5 py-3">
+        <div class="container">
+            <p>نظام إدارة شبكة الطاقة الكهربائية &copy; 2025</p>
+        </div>
+    </footer>
+
+    <!-- تضمين Bootstrap -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- سكريبت واجهة برمجة التطبيقات -->
+    <script>
+        // وظائف مساعدة للتعامل مع واجهة برمجة التطبيقات
+        const API_BASE_URL = '/api';
+        
+        /**
+         * وظيفة مساعدة لإرسال طلبات للواجهة البرمجية
+         * @param {string} url - مسار نقطة النهاية
+         * @param {string} method - طريقة الطلب (GET, POST, PUT, DELETE)
+         * @param {Object} data - البيانات المرسلة (اختياري)
+         * @returns {Promise} وعد بالاستجابة
+         */
+        async function apiRequest(url, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+                
+                // إذا كان هناك بيانات، أضفها إلى الطلب
+                if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                // إرسال الطلب
+                const response = await fetch(url, options);
+                
+                // التحقق من نجاح الطلب
+                if (response.ok) {
+                    // إذا كانت الاستجابة فارغة، إرجاع نجاح بدون بيانات
+                    if (response.status === 204) {
+                        return { success: true };
+                    }
+                    
+                    // محاولة تحليل البيانات كـ JSON
+                    const responseData = await response.json();
+                    return { success: true, data: responseData };
+                } else {
+                    // محاولة استخراج رسالة الخطأ من الاستجابة
+                    let errorMessage = 'حدث خطأ غير معروف';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorData.detail || JSON.stringify(errorData);
+                    } catch (e) {
+                        errorMessage = `خطأ ${response.status}: ${response.statusText}`;
+                    }
+                    
+                    return { 
+                        success: false, 
+                        error: { 
+                            status: response.status, 
+                            message: errorMessage 
+                        } 
+                    };
+                }
+            } catch (error) {
+                console.error('خطأ في طلب API:', error);
+                return { 
+                    success: false, 
+                    error: { 
+                        message: 'فشل الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت.' 
+                    } 
+                };
+            }
+        }
+        
+        // واجهات برمجة تطبيقات للحصول على بيانات الشبكة
+        const NetworkAPI = {
+            getPowerSources: async function() {
+                return await apiRequest(`${API_BASE_URL}/powersources/`);
+            },
+            
+            getPanels: async function() {
+                return await apiRequest(`${API_BASE_URL}/panels/`);
+            },
+            
+            getCircuitBreakers: async function() {
+                return await apiRequest(`${API_BASE_URL}/circuitbreakers/`);
+            },
+            
+            getLoads: async function() {
+                return await apiRequest(`${API_BASE_URL}/loads/`);
+            },
+            
+            getPowerSourceById: async function(id) {
+                return await apiRequest(`${API_BASE_URL}/powersources/${id}/`);
+            },
+            
+            getPanelById: async function(id) {
+                return await apiRequest(`${API_BASE_URL}/panels/${id}/`);
+            },
+            
+            getCircuitBreakerById: async function(id) {
+                return await apiRequest(`${API_BASE_URL}/circuitbreakers/${id}/`);
+            },
+            
+            getLoadById: async function(id) {
+                return await apiRequest(`${API_BASE_URL}/loads/${id}/`);
+            }
+        };
+    </script>
+    
+    <!-- سكريبت عرض الشبكة التفاعلية -->
+    <script>
+        // تعريف المتغيرات العالمية
+        let flowInstance = null;
+        let networkData = {
+            nodes: [],
+            edges: []
+        };
+        
+        // قواميس للترجمة والألوان
+        const typeColors = {
+            'powerSource': '#dc3545', // أحمر
+            'panel': '#198754',       // أخضر
+            'circuitBreaker': '#ffc107', // أصفر
+            'load': '#0d6efd'         // أزرق
+        };
+        
+        const typeNames = {
+            'powerSource': 'مصدر طاقة',
+            'panel': 'لوحة كهربائية',
+            'circuitBreaker': 'قاطع كهربائي',
+            'load': 'حمل كهربائي',
+            'main': 'رئيسية',
+            'sub_main': 'رئيسية فرعية',
+            'sub': 'فرعية',
+            'distribution': 'توزيع',
+            'main_circuit_breaker': 'قاطع رئيسي',
+            'copper': 'نحاس',
+            'aluminum': 'ألمنيوم'
+        };
+        
+        // عند تحميل الصفحة
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // تحميل بيانات الشبكة
+                await loadNetworkData();
+                
+                // تهيئة مخطط ReactFlow
+                initReactFlow();
+                
+                // ربط أحداث الأزرار
+                document.getElementById('btnZoomIn').addEventListener('click', () => {
+                    if (flowInstance) {
+                        flowInstance.zoomIn();
+                    }
+                });
+                
+                document.getElementById('btnZoomOut').addEventListener('click', () => {
+                    if (flowInstance) {
+                        flowInstance.zoomOut();
+                    }
+                });
+                
+                document.getElementById('btnFitView').addEventListener('click', () => {
+                    if (flowInstance) {
+                        flowInstance.fitView({ padding: 0.2 });
+                    }
+                });
+                
+                document.getElementById('btnResetView').addEventListener('click', () => {
+                    if (flowInstance) {
+                        flowInstance.fitView({ padding: 0.2 });
+                    }
+                });
+                
+                document.getElementById('btnExportImage').addEventListener('click', exportAsImage);
+                
+                // ربط أحداث فلاتر العرض
+                document.getElementById('showPowerSources').addEventListener('change', applyFilters);
+                document.getElementById('showPanels').addEventListener('change', applyFilters);
+                document.getElementById('showBreakers').addEventListener('change', applyFilters);
+                document.getElementById('showLoads').addEventListener('change', applyFilters);
+                
+                // إخفاء مؤشر التحميل
+                document.getElementById('loadingIndicator').style.display = 'none';
+            } catch (error) {
+                console.error('حدث خطأ أثناء تهيئة الصفحة:', error);
+                document.getElementById('loadingIndicator').style.display = 'none';
+                alert('حدث خطأ أثناء تحميل بيانات الشبكة. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+            }
+        });
+        
+        /**
+         * تحميل بيانات الشبكة من واجهة برمجة التطبيقات
+         */
+        async function loadNetworkData() {
+            try {
+                // جلب جميع العناصر
+                const powerSourcesResponse = await NetworkAPI.getPowerSources();
+                const panelsResponse = await NetworkAPI.getPanels();
+                const breakersResponse = await NetworkAPI.getCircuitBreakers();
+                const loadsResponse = await NetworkAPI.getLoads();
+                
+                if (!powerSourcesResponse.success || !panelsResponse.success || 
+                    !breakersResponse.success || !loadsResponse.success) {
+                    throw new Error('فشل في جلب بيانات الشبكة');
+                }
+                
+                const powerSources = powerSourcesResponse.data;
+                const panels = panelsResponse.data;
+                const breakers = breakersResponse.data;
+                const loads = loadsResponse.data;
+                
+                // إعداد العقد (nodes)
+                networkData.nodes = [];
+                
+                // إضافة مصادر الطاقة
+                let xPos = 100;
+                let yPos = 100;
+                
+                powerSources.forEach((source, index) => {
+                    networkData.nodes.push({
+                        id: `ps-${source.id}`,
+                        type: 'input',
+                        data: { 
+                            label: source.name,
+                            entityType: 'powerSource',
+                            sourceData: source 
+                        },
+                        position: { x: xPos, y: yPos },
+                        style: { 
+                            background: typeColors.powerSource, 
+                            color: 'white',
+                            border: '1px solid #222138',
+                            width: 180,
+                            borderRadius: '5px'
+                        }
+                    });
+                    xPos += 300;
+                    if ((index + 1) % 3 === 0) {
+                        xPos = 100;
+                        yPos += 150;
+                    }
+                });
+                
+                // إضافة اللوحات
+                xPos = 150;
+                yPos += 150;
+                
+                panels.forEach((panel, index) => {
+                    networkData.nodes.push({
+                        id: `panel-${panel.id}`,
+                        data: { 
+                            label: panel.name,
+                            entityType: 'panel',
+                            sourceData: panel 
+                        },
+                        position: { x: xPos, y: yPos },
+                        style: { 
+                            background: typeColors.panel, 
+                            color: 'white',
+                            border: '1px solid #222138',
+                            width: 180,
+                            borderRadius: '5px'
+                        }
+                    });
+                    xPos += 250;
+                    if ((index + 1) % 4 === 0) {
+                        xPos = 150;
+                        yPos += 120;
+                    }
+                });
+                
+                // إضافة القواطع
+                xPos = 200;
+                yPos += 150;
+                
+                breakers.forEach((breaker, index) => {
+                    networkData.nodes.push({
+                        id: `breaker-${breaker.id}`,
+                        data: { 
+                            label: breaker.name || `قاطع ${breaker.id}`,
+                            entityType: 'circuitBreaker',
+                            sourceData: breaker 
+                        },
+                        position: { x: xPos, y: yPos },
+                        style: { 
+                            background: typeColors.circuitBreaker, 
+                            color: '#333',
+                            border: '1px solid #222138',
+                            width: 150,
+                            borderRadius: '5px'
+                        }
+                    });
+                    xPos += 200;
+                    if ((index + 1) % 5 === 0) {
+                        xPos = 200;
+                        yPos += 100;
+                    }
+                });
+                
+                // إضافة الأحمال
+                xPos = 250;
+                yPos += 150;
+                
+                loads.forEach((load, index) => {
+                    networkData.nodes.push({
+                        id: `load-${load.id}`,
+                        type: 'output',
+                        data: { 
+                            label: load.name,
+                            entityType: 'load',
+                            sourceData: load 
+                        },
+                        position: { x: xPos, y: yPos },
+                        style: { 
+                            background: typeColors.load, 
+                            color: 'white',
+                            border: '1px solid #222138',
+                            width: 150,
+                            borderRadius: '5px'
+                        }
+                    });
+                    xPos += 180;
+                    if ((index + 1) % 6 === 0) {
+                        xPos = 250;
+                        yPos += 80;
+                    }
+                });
+                
+                // إعداد الحواف (edges)
+                networkData.edges = [];
+                
+                // روابط مصادر الطاقة إلى اللوحات
+                panels.forEach(panel => {
+                    if (panel.power_source) {
+                        networkData.edges.push({
+                            id: `ps${panel.power_source}-panel${panel.id}`,
+                            source: `ps-${panel.power_source}`,
+                            target: `panel-${panel.id}`,
+                            animated: true,
+                            style: { stroke: typeColors.powerSource },
+                            label: 'يغذي'
+                        });
+                    }
+                });
+                
+                // روابط اللوحات الأم إلى اللوحات الفرعية
+                panels.forEach(panel => {
+                    if (panel.parent_panel) {
+                        networkData.edges.push({
+                            id: `panel${panel.parent_panel}-panel${panel.id}`,
+                            source: `panel-${panel.parent_panel}`,
+                            target: `panel-${panel.id}`,
+                            animated: true,
+                            style: { stroke: typeColors.panel },
+                            label: 'أم'
+                        });
+                    }
+                });
+                
+                // روابط اللوحات إلى القواطع
+                breakers.forEach(breaker => {
+                    if (breaker.panel) {
+                        networkData.edges.push({
+                            id: `panel${breaker.panel}-breaker${breaker.id}`,
+                            source: `panel-${breaker.panel}`,
+                            target: `breaker-${breaker.id}`,
+                            style: { stroke: typeColors.panel }
+                        });
+                    }
+                });
+                
+                // روابط القواطع إلى الأحمال
+                loads.forEach(load => {
+                    if (load.breaker) {
+                        networkData.edges.push({
+                            id: `breaker${load.breaker}-load${load.id}`,
+                            source: `breaker-${load.breaker}`,
+                            target: `load-${load.id}`,
+                            style: { stroke: typeColors.load }
+                        });
+                    }
+                });
+                
+                // روابط للقواطع المغذية
+                breakers.forEach(breaker => {
+                    if (breaker.feeding_breakers && breaker.feeding_breakers.length > 0) {
+                        breaker.feeding_breakers.forEach(feederId => {
+                            networkData.edges.push({
+                                id: `breaker${feederId}-breaker${breaker.id}`,
+                                source: `breaker-${feederId}`,
+                                target: `breaker-${breaker.id}`,
+                                animated: true,
+                                style: { stroke: typeColors.circuitBreaker, strokeDasharray: '5, 5' },
+                                label: 'يغذي'
+                            });
+                        });
+                    }
+                });
+                
+                return true;
+            } catch (error) {
+                console.error('خطأ في تحميل بيانات الشبكة:', error);
+                return false;
+            }
+        }
+        
+        /**
+         * تهيئة مخطط ReactFlow
+         */
+        function initReactFlow() {
+            // الحصول على حاوية العرض
+            const container = document.getElementById('networkContainer');
+            
+            // التأكد من أن المكتبة محملة
+            if (typeof ReactFlow === 'undefined') {
+                console.error('مكتبة ReactFlow غير محملة');
+                setTimeout(initReactFlow, 500);
+                return;
+            }
+            
+            // إنشاء حاوية ReactFlow
+            const reactFlowContainer = document.createElement('div');
+            reactFlowContainer.style.width = '100%';
+            reactFlowContainer.style.height = '100%';
+            
+            // إضافة الحاوية إلى العنصر الأصلي
+            container.appendChild(reactFlowContainer);
+            
+            const { ReactFlowProvider, ReactFlow, Background, Controls } = window.ReactFlow;
+            
+            // إعداد خيارات ReactFlow
+            const reactFlowOptions = {
+                nodes: networkData.nodes,
+                edges: networkData.edges,
+                defaultZoom: 0.8,
+                minZoom: 0.2,
+                maxZoom: 2,
+                fitView: true,
+                attributionPosition: 'bottom-left',
+                nodesDraggable: true,
+                elementsSelectable: true,
+                zoomOnScroll: true,
+                panOnScroll: true,
+                panOnDrag: true,
+                onNodeClick: handleNodeClick,
+                onLoad: (instance) => {
+                    flowInstance = instance;
+                    flowInstance.fitView({ padding: 0.2 });
+                }
+            };
+            
+            // عرض مخطط ReactFlow
+            ReactDOM.render(
+                React.createElement(
+                    ReactFlowProvider,
+                    null,
+                    React.createElement(
+                        ReactFlow,
+                        {
+                            ...reactFlowOptions,
+                            style: { background: '#f8f8f8' }
+                        },
+                        [
+                            React.createElement(Background, { color: '#aaa', gap: 16, size: 1 }),
+                            React.createElement(Controls, { position: 'bottom-right' })
+                        ]
+                    )
+                ),
+                reactFlowContainer
+            );
+        }
+        
+        /**
+         * معالج الضغط على عقدة
+         * @param {Event} event - حدث الضغط
+         * @param {Object} node - العقدة التي تم الضغط عليها
+         */
+        function handleNodeClick(event, node) {
+            // عرض تفاصيل العنصر المحدد
+            const detailsTitle = document.getElementById('detailsTitle');
+            const detailsContent = document.getElementById('detailsContent');
+            
+            const nodeType = node.data.entityType;
+            const nodeData = node.data.sourceData;
+            
+            // تحديد العنوان حسب نوع العنصر
+            const nodeTypeName = typeNames[nodeType] || nodeType;
+            detailsTitle.innerHTML = `<i class="fas fa-info-circle"></i> ${nodeTypeName}: ${node.data.label}`;
+            
+            // إنشاء جدول لعرض التفاصيل
+            let tableContent = '<table class="node-details-table w-100">';
+            
+            switch (nodeType) {
+                case 'powerSource':
+                    tableContent += `
+                        <tr><td>النوع</td><td>${typeNames[nodeData.source_type] || nodeData.source_type}</td></tr>
+                        <tr><td>الجهد</td><td>${nodeData.voltage}</td></tr>
+                        <tr><td>الأمبير الكلي</td><td>${nodeData.total_ampacity || '-'} أمبير</td></tr>
+                        <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
+                        <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
+                        <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
+                        <tr><td>عدد الكابلات</td><td>${nodeData.cable_quantity || '1'}</td></tr>
+                    `;
+                    break;
+                    
+                case 'panel':
+                    tableContent += `
+                        <tr><td>النوع</td><td>${typeNames[nodeData.panel_type] || nodeData.panel_type}</td></tr>
+                        <tr><td>الجهد</td><td>${nodeData.voltage}</td></tr>
+                        <tr><td>الأمبير</td><td>${nodeData.ampacity || '-'} أمبير</td></tr>
+                        <tr><td>الموقع</td><td>${nodeData.location || '-'}</td></tr>
+                        <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
+                        <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
+                        <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
+                    `;
+                    break;
+                    
+                case 'circuitBreaker':
+                    tableContent += `
+                        <tr><td>النوع</td><td>${nodeData.breaker_type || '-'}</td></tr>
+                        <tr><td>الأمبير المقنن</td><td>${nodeData.rated_current || '-'} أمبير</td></tr>
+                        <tr><td>عدد الأقطاب</td><td>${nodeData.number_of_poles || '-'}</td></tr>
+                        <tr><td>الدور</td><td>${typeNames[nodeData.role] || nodeData.role || '-'}</td></tr>
+                        <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
+                        <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
+                        <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
+                    `;
+                    break;
+                    
+                case 'load':
+                    tableContent += `
+                        <tr><td>نوع الحمل</td><td>${nodeData.load_type || '-'}</td></tr>
+                        <tr><td>الأمبير</td><td>${nodeData.ampacity || '-'} أمبير</td></tr>
+                        <tr><td>معامل القدرة</td><td>${nodeData.power_factor || '-'}</td></tr>
+                        <tr><td>ساعات الاستخدام</td><td>${nodeData.estimated_usage_hours || '-'} ساعة/يوم</td></tr>
+                        <tr><td>الوصف</td><td>${nodeData.description || '-'}</td></tr>
+                    `;
+                    break;
+            }
+            
+            tableContent += '</table>';
+            
+            // إضافة زر للانتقال إلى صفحة تفاصيل العنصر
+            const entityUrlPath = nodeType === 'powerSource' ? 'power-sources' : 
+                                 nodeType === 'panel' ? 'panels' : 
+                                 nodeType === 'circuitBreaker' ? 'breakers' : 'loads';
+            
+            const entityId = nodeData.id;
+            
+            tableContent += `
+                <div class="mt-3">
+                    <a href="/static/${entityUrlPath}.html#${entityId}" class="btn btn-sm btn-primary">
+                        <i class="fas fa-edit"></i> تحرير
+                    </a>
+                    <button class="btn btn-sm btn-info ms-2" onclick="highlightConnections('${node.id}')">
+                        <i class="fas fa-project-diagram"></i> إظهار الاتصالات
+                    </button>
+                </div>
+            `;
+            
+            detailsContent.innerHTML = tableContent;
+        }
+        
+        /**
+         * إبراز اتصالات العقدة المحددة
+         * @param {string} nodeId - معرف العقدة
+         */
+        function highlightConnections(nodeId) {
+            if (!flowInstance) return;
+            
+            // إعادة ضبط تنسيق جميع الحواف
+            let updatedEdges = [...networkData.edges].map(edge => {
+                // إعادة التنسيق الأصلي للحافة
+                const sourceType = edge.source.split('-')[0];
+                let strokeColor;
+                
+                if (sourceType === 'ps') {
+                    strokeColor = typeColors.powerSource;
+                } else if (sourceType === 'panel') {
+                    strokeColor = typeColors.panel;
+                } else if (sourceType === 'breaker') {
+                    strokeColor = sourceType === 'load' ? typeColors.load : typeColors.circuitBreaker;
+                }
+                
+                return {
+                    ...edge,
+                    style: { 
+                        ...edge.style,
+                        stroke: strokeColor,
+                        strokeWidth: 1,
+                        opacity: 0.3
+                    }
+                };
+            });
+            
+            // إبراز الحواف المتصلة بالعقدة
+            updatedEdges = updatedEdges.map(edge => {
+                if (edge.source === nodeId || edge.target === nodeId) {
+                    return {
+                        ...edge,
+                        style: {
+                            ...edge.style,
+                            strokeWidth: 3,
+                            opacity: 1
+                        }
+                    };
+                }
+                return edge;
+            });
+            
+            // تحديث العرض
+            flowInstance.setEdges(updatedEdges);
+            
+            // إعادة ضبط بعد 3 ثوان
+            setTimeout(() => {
+                flowInstance.setEdges(networkData.edges);
+            }, 3000);
+        }
+        
+        /**
+         * تطبيق فلاتر العرض
+         */
+        function applyFilters() {
+            if (!flowInstance) return;
+            
+            const showPowerSources = document.getElementById('showPowerSources').checked;
+            const showPanels = document.getElementById('showPanels').checked;
+            const showBreakers = document.getElementById('showBreakers').checked;
+            const showLoads = document.getElementById('showLoads').checked;
+            
+            // تحديث العقد المرئية
+            const filteredNodes = networkData.nodes.filter(node => {
+                const nodeType = node.data.entityType;
+                
+                if (nodeType === 'powerSource' && !showPowerSources) return false;
+                if (nodeType === 'panel' && !showPanels) return false;
+                if (nodeType === 'circuitBreaker' && !showBreakers) return false;
+                if (nodeType === 'load' && !showLoads) return false;
+                
+                return true;
+            });
+            
+            // تصفية الحواف التي تصل بين العقد المرئية فقط
+            const visibleNodeIds = new Set(filteredNodes.map(node => node.id));
+            
+            const filteredEdges = networkData.edges.filter(edge => 
+                visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
+            );
+            
+            // تحديث العرض
+            flowInstance.setNodes(filteredNodes);
+            flowInstance.setEdges(filteredEdges);
+            flowInstance.fitView({ padding: 0.2 });
+        }
+        
+        /**
+         * تصدير المخطط كصورة
+         */
+        function exportAsImage() {
+            // التأكد من وجود مكتبة html2canvas
+            if (typeof html2canvas === 'undefined') {
+                alert('لم يتم تحميل مكتبة html2canvas');
+                return;
+            }
+            
+            const container = document.getElementById('networkContainer');
+            
+            // تصدير الصورة
+            html2canvas(container).then(canvas => {
+                // تحويل Canvas إلى صورة
+                const imgData = canvas.toDataURL('image/png');
+                
+                // إنشاء رابط لتنزيل الصورة
+                const link = document.createElement('a');
+                link.download = 'network-diagram.png';
+                link.href = imgData;
+                link.click();
+            }).catch(error => {
+                console.error('خطأ في تصدير الصورة:', error);
+                alert('حدث خطأ أثناء تصدير الصورة');
+            });
+        }
+    </script>
+</body>
+</html>
