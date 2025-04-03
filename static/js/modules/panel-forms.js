@@ -130,6 +130,9 @@ async function showAddPanelModal(isEdit = false, panelId = null) {
         // تحميل مصادر الطاقة المتاحة
         await loadPowerSourcesDropdown();
         
+        // تحميل قائمة اللوحات الأم
+        await loadMainPanelsDropdown('panel-parent');
+        
         // تعيين معرف مصدر الطاقة من عنصر الفلترة
         const powerSourceSelect = document.getElementById('panel-filter-source');
         const powerSourceInput = document.getElementById('panel-power-source');
