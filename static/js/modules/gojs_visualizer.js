@@ -53,8 +53,6 @@ export class GoJSNetworkVisualizer {
         // استخدام الإشارة إلى كائن go من النطاق الخاص بالفئة
         const $ = this.go.GraphObject.make;
         
-        // بدلاً من تعريف شكل البرق المخصص، سنستخدم أشكال GoJS المدمجة
-        
         // إنشاء مخطط GoJS
         this.diagram = $(this.go.Diagram, this.containerId, {
             initialContentAlignment: this.go.Spot.Center,  // محاذاة المحتوى للمنتصف
@@ -67,12 +65,13 @@ export class GoJSNetworkVisualizer {
             "grid.visible": true,                     // إظهار الشبكة
             "grid.gridCellSize": new this.go.Size(20, 20), // حجم خلية الشبكة
             "grid.background": "rgba(0,0,0,0.02)",    // لون خلفية الشبكة
-            layout: $(this.go.LayeredDigraphLayout, {      // مخطط طبقي موجه
-                direction: 90,                        // اتجاه من أعلى إلى أسفل (درجات)
-                columnSpacing: 30,                    // المسافة بين الأعمدة
-                layerSpacing: 60,                     // المسافة بين الطبقات
-                setsPortSpots: false,                 // لا يعيد تعيين نقاط المنافذ
-                packOption: this.go.LayeredDigraphLayout.PackAll, // تعبئة كل شيء
+            // تخطيط بسيط متوافق مع معظم إصدارات GoJS
+            layout: $(this.go.LayeredDigraphLayout, {
+                direction: 90,                        // من أعلى إلى أسفل
+                columnSpacing: 40,                    // المسافة بين الأعمدة
+                layerSpacing: 80,                     // المسافة بين الطبقات
+                setsPortSpots: true,                  // تعيين نقاط المنافذ تلقائيًا
+                packOption: 3                         // استخدام أرقام بدلاً من الثوابت
             })
         });
         
