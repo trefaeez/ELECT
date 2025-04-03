@@ -24,6 +24,15 @@ from .views import (
     breakers_view
 )
 
+# إضافة وظائف عرض للمرئيات
+def network_visualizer_view(request):
+    """عرض المرئيات الشبكية"""
+    return render(request, 'network-visualizer.html')
+
+def panel_tree_visualizer_view(request):
+    """عرض هيكل اللوحات الشجري"""
+    return render(request, 'panel-tree-visualizer.html')
+
 # دالة بسيطة للصفحة الرئيسية
 def home(request):
     """
@@ -57,4 +66,8 @@ urlpatterns = [
     path('panels/', panels_view, name='panels'),
     path('loads/', loads_view, name='loads'),
     path('breakers/', breakers_view, name='breakers'),
+    
+    # إضافة مسارات المرئيات
+    path('network-visualizer/', network_visualizer_view, name='network_visualizer'),
+    path('panel-tree-visualizer/', panel_tree_visualizer_view, name='panel_tree_visualizer'),
 ]

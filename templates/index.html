@@ -11,6 +11,47 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
     <!-- تضمين Font Awesome للأيقونات -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .feature-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-bottom: 20px;
+            height: 100%;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .visualizations-section {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px 20px;
+            margin-top: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            position: relative;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .section-title:after {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 3px;
+            background-color: #0d6efd;
+            bottom: 0;
+            right: 0;
+        }
+    </style>
 </head>
 <body>
     <!-- شريط التنقل العلوي -->
@@ -24,25 +65,49 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="power-sources/">
-                            <i class="fas fa-plug"></i> مصادر الطاقة
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="componentsDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-database"></i> مكونات الشبكة
                         </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'power_sources' %}">
+                                    <i class="fas fa-plug"></i> مصادر الطاقة
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'panels' %}">
+                                    <i class="fas fa-server"></i> اللوحات
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'breakers' %}">
+                                    <i class="fas fa-toggle-on"></i> القواطع
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'loads' %}">
+                                    <i class="fas fa-lightbulb"></i> الأحمال
+                                </a>
+                            </li>
+                        </ul>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="panels/">
-                            <i class="fas fa-server"></i> اللوحات
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="visualizationsDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-chart-network"></i> التصورات المرئية
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="breakers/">
-                            <i class="fas fa-toggle-on"></i> القواطع
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="loads/">
-                            <i class="fas fa-lightbulb"></i> الأحمال
-                        </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'network_visualizer' %}">
+                                    <i class="fas fa-project-diagram"></i> الشبكة التفاعلية
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'panel_tree_visualizer' %}">
+                                    <i class="fas fa-sitemap"></i> هيكل اللوحات الشجري
+                                </a>
+                            </li>
+                        </ul>
                     </li>
                 </ul>
             </div>
@@ -52,82 +117,127 @@
     <!-- الحاوية الرئيسية -->
     <div class="container mt-4">
         <!-- قسم الترحيب -->
-        <div class="jumbotron text-center p-5 mb-5 bg-light rounded">
+        <div class="jumbotron text-center p-5 mb-4 bg-light rounded">
             <h1 class="display-4"><i class="fas fa-bolt text-primary"></i> نظام إدارة شبكة الطاقة الكهربائية</h1>
             <p class="lead">نظام متكامل لإدارة مصادر الطاقة، اللوحات الكهربائية، القواطع والأحمال</p>
             <hr class="my-4">
-            <p>اختر من القائمة أعلاه أو استخدم الأزرار أدناه للوصول إلى أقسام النظام المختلفة</p>
-            <div class="mt-4">
-                <a href="power-sources/" class="btn btn-primary btn-lg m-2">
-                    <i class="fas fa-plug"></i> مصادر الطاقة
-                </a>
-                <a href="panels/" class="btn btn-success btn-lg m-2">
-                    <i class="fas fa-server"></i> اللوحات
-                </a>
-                <a href="breakers/" class="btn btn-warning btn-lg m-2">
-                    <i class="fas fa-toggle-on"></i> القواطع
-                </a>
-                <a href="loads/" class="btn btn-danger btn-lg m-2">
-                    <i class="fas fa-lightbulb"></i> الأحمال
-                </a>
+            <p>استخدم الأزرار أدناه للوصول إلى أقسام النظام المختلفة</p>
+        </div>
+
+        <!-- قسم إدارة المكونات -->
+        <h2 class="section-title mb-4"><i class="fas fa-cogs text-primary"></i> إدارة مكونات الشبكة</h2>
+        <div class="row">
+            <div class="col-md-6 col-lg-3">
+                <div class="card feature-card text-center">
+                    <div class="card-body">
+                        <div class="card-icon text-primary">
+                            <i class="fas fa-plug"></i>
+                        </div>
+                        <h4>مصادر الطاقة</h4>
+                        <p class="card-text">إدارة الشبكة المحلية والمولدات ومصادر الطاقة المختلفة</p>
+                        <a href="{% url 'power_sources' %}" class="btn btn-primary mt-2">
+                            إدارة المصادر <i class="fas fa-arrow-left ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="card feature-card text-center">
+                    <div class="card-body">
+                        <div class="card-icon text-success">
+                            <i class="fas fa-server"></i>
+                        </div>
+                        <h4>اللوحات</h4>
+                        <p class="card-text">إدارة اللوحات الكهربائية الرئيسية والفرعية وربطها بمصادر الطاقة</p>
+                        <a href="{% url 'panels' %}" class="btn btn-success mt-2">
+                            إدارة اللوحات <i class="fas fa-arrow-left ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="card feature-card text-center">
+                    <div class="card-body">
+                        <div class="card-icon text-warning">
+                            <i class="fas fa-toggle-on"></i>
+                        </div>
+                        <h4>القواطع</h4>
+                        <p class="card-text">إدارة القواطع الكهربائية بمختلف أنواعها وإضافتها للوحات</p>
+                        <a href="/breakers/" class="btn btn-warning mt-2">
+                            إدارة القواطع <i class="fas fa-arrow-left ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="card feature-card text-center">
+                    <div class="card-body">
+                        <div class="card-icon text-danger">
+                            <i class="fas fa-lightbulb"></i>
+                        </div>
+                        <h4>الأحمال</h4>
+                        <p class="card-text">إدارة الأحمال الكهربائية المتصلة بالشبكة وتوزيعها على القواطع</p>
+                        <a href="{% url 'loads' %}" class="btn btn-danger mt-2">
+                            إدارة الأحمال <i class="fas fa-arrow-left ms-1"></i>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- بطاقات الأقسام -->
-        <div class="row mt-5">
-            <div class="col-md-6 col-lg-3 mb-4">
-                <div class="card h-100 text-center">
-                    <div class="card-header bg-primary text-white">
-                        <h3><i class="fas fa-plug"></i> مصادر الطاقة</h3>
+        <!-- قسم التصورات المرئية والتحليلات -->
+        <div class="visualizations-section mt-5">
+            <h2 class="section-title"><i class="fas fa-chart-bar text-primary"></i> التصورات المرئية والتحليلات</h2>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card feature-card text-center">
+                        <div class="card-body">
+                            <div class="card-icon text-info">
+                                <i class="fas fa-project-diagram"></i>
+                            </div>
+                            <h4>الشبكة التفاعلية</h4>
+                            <p class="card-text">عرض جميع مكونات الشبكة والعلاقات بينها بشكل رسم بياني تفاعلي</p>
+                            <p class="text-muted small">استكشف الروابط بين المكونات وتصور الشبكة بشكل كامل</p>
+                            <a href="{% url 'network_visualizer' %}" class="btn btn-info mt-2 text-white">
+                                عرض الشبكة التفاعلية <i class="fas fa-arrow-left ms-1"></i>
+                            </a>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <p class="card-text">إدارة مصادر الطاقة المختلفة مثل الشبكة المحلية والمولدات</p>
-                        <p class="card-text text-muted">عرض، إضافة، تعديل وحذف مصادر الطاقة</p>
-                    </div>
-                    <div class="card-footer">
-                        <a href="power-sources/" class="btn btn-primary">إدارة مصادر الطاقة</a>
+                </div>
+                <div class="col-md-6">
+                    <div class="card feature-card text-center">
+                        <div class="card-body">
+                            <div class="card-icon text-primary">
+                                <i class="fas fa-sitemap"></i>
+                            </div>
+                            <h4>هيكل اللوحات الشجري</h4>
+                            <p class="card-text">عرض هرمي شجري لتوزيع اللوحات من مصادر الطاقة وحتى اللوحات الفرعية</p>
+                            <p class="text-muted small">استعرض التسلسل الهرمي للوحات وفهم ارتباطاتها بشكل سهل</p>
+                            <a href="{% url 'panel_tree_visualizer' %}" class="btn btn-primary mt-2">
+                                عرض هيكل اللوحات <i class="fas fa-arrow-left ms-1"></i>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-3 mb-4">
-                <div class="card h-100 text-center">
-                    <div class="card-header bg-success text-white">
-                        <h3><i class="fas fa-server"></i> اللوحات</h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="card-text">إدارة اللوحات الكهربائية الرئيسية والفرعية</p>
-                        <p class="card-text text-muted">ربط اللوحات بمصادر الطاقة وإضافة القواطع إليها</p>
-                    </div>
-                    <div class="card-footer">
-                        <a href="panels/" class="btn btn-success">إدارة اللوحات</a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-3 mb-4">
-                <div class="card h-100 text-center">
-                    <div class="card-header bg-warning text-dark">
-                        <h3><i class="fas fa-toggle-on"></i> القواطع</h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="card-text">إدارة القواطع الكهربائية بمختلف أنواعها</p>
-                        <p class="card-text text-muted">إضافة قواطع للوحات وربط الأحمال بها</p>
-                    </div>
-                    <div class="card-footer">
-                        <a href="breakers/" class="btn btn-warning">إدارة القواطع</a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-3 mb-4">
-                <div class="card h-100 text-center">
-                    <div class="card-header bg-danger text-white">
-                        <h3><i class="fas fa-lightbulb"></i> الأحمال</h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="card-text">إدارة الأحمال الكهربائية المتصلة بالشبكة</p>
-                        <p class="card-text text-muted">عرض تفاصيل الأحمال وتوزيعها على القواطع</p>
-                    </div>
-                    <div class="card-footer">
-                        <a href="loads/" class="btn btn-danger">إدارة الأحمال</a>
+        </div>
+
+        <!-- قسم التصدير والتقارير - للتطوير المستقبلي -->
+        <div class="mt-5 mb-5">
+            <h2 class="section-title"><i class="fas fa-file-export text-primary"></i> التقارير والتصدير</h2>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card feature-card">
+                        <div class="card-body text-center p-5">
+                            <div class="card-icon text-muted">
+                                <i class="fas fa-file-pdf"></i>
+                            </div>
+                            <h4>قريباً - توليد التقارير وتصدير البيانات</h4>
+                            <p class="card-text">سيتم توفير إمكانية إنشاء تقارير مفصلة عن مكونات الشبكة وتصديرها بصيغ مختلفة مثل PDF وExcel</p>
+                            <button class="btn btn-secondary mt-2" disabled>
+                                قريباً <i class="fas fa-hourglass-half ms-1"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -135,7 +245,16 @@
 
         <!-- تذييل الصفحة -->
         <footer class="mt-5 text-center text-muted pb-4">
-            <p>نظام إدارة شبكة الطاقة الكهربائية &copy; 2025</p>
+            <div class="row">
+                <div class="col-md-12">
+                    <p>نظام إدارة شبكة الطاقة الكهربائية &copy; 2025</p>
+                    <div class="mt-2">
+                        <a href="#" class="btn btn-sm btn-outline-secondary mx-1"><i class="fas fa-info-circle"></i> حول النظام</a>
+                        <a href="#" class="btn btn-sm btn-outline-secondary mx-1"><i class="fas fa-question-circle"></i> المساعدة</a>
+                        <a href="#" class="btn btn-sm btn-outline-secondary mx-1"><i class="fas fa-envelope"></i> اتصل بنا</a>
+                    </div>
+                </div>
+            </div>
         </footer>
     </div>
 
