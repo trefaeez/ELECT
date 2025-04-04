@@ -1769,7 +1769,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadNetworkData();
         
         // ثم تهيئة المخطط بعد تحميل البيانات بنجاح
-        initializeNetworkVisualizer();
+        //initializeNetworkVisualizer();
     } catch (error) {
         console.error('حدث خطأ أثناء تهيئة الصفحة:', error);
         document.getElementById('loadingIndicator').style.display = 'none';
