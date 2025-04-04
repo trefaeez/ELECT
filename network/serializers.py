@@ -441,10 +441,10 @@ class PanelSerializer(serializers.ModelSerializer):
     feeder_breaker_details = CircuitBreakerSerializer(source='feeder_breaker', read_only=True)
     
     # إضافة تفاصيل مصدر الطاقة (في حالة اللوحة الرئيسية) للعرض فقط
-    power_source_details = PowerSourceSerializer(source='power_source', read_only=True)
+    power_source_details = serializers.SerializerMethodField()
     
     # إضافة تفاصيل اللوحة الأم (في حالة اللوحة الفرعية) للعرض فقط
-    parent_panel_details = PanelBasicSerializer(source='parent_panel', read_only=True)
+    parent_panel_details = serializers.SerializerMethodField()
     
     # إضافة تفاصيل اللوحات الفرعية للعرض فقط
     child_panels = serializers.SerializerMethodField()
@@ -559,6 +559,32 @@ class PanelSerializer(serializers.ModelSerializer):
         إرجاع مواصفات الكابل بتنسيق نصي
         """
         return obj.get_cable_specification()
+    
+    def get_power_source_details(self, obj):
+        """
+        إرجاع معلومات مصدر الطاقة المرتبط باللوحة
+        """
+        if obj.power_source:
+            return {
+                'id': obj.power_source.id,
+                'name': obj.power_source.name,
+                'source_type': obj.power_source.source_type,
+                'voltage': obj.power_source.voltage,
+                'total_ampacity': obj.power_source.total_ampacity
+            }
+        return None
+        
+    def get_parent_panel_details(self, obj):
+        """
+        إرجاع معلومات اللوحة الأم المرتبطة باللوحة
+        """
+        if obj.parent_panel:
+            return {
+                'id': obj.parent_panel.id,
+                'name': obj.parent_panel.name,
+                'panel_type': obj.parent_panel.panel_type
+            }
+        return None
 
 # فئة المُسلسل الخاصة بالأحمال (Load)
 class LoadSerializer(serializers.ModelSerializer):

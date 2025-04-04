@@ -182,6 +182,80 @@ class PowerSourceViewSet(viewsets.ModelViewSet):
         except CircuitBreaker.DoesNotExist:
             return Response({'error': 'القاطع غير موجود'}, status=status.HTTP_404_NOT_FOUND)
 
+    @action(detail=True, methods=['get', 'post'])
+    def breakers(self, request, pk=None):
+        """
+        طريقة للحصول على القواطع المرتبطة بمصدر طاقة محدد أو إضافة قاطع جديد
+        GET: يجلب جميع القواطع المرتبطة بمصدر طاقة
+        POST: يضيف قاطع جديد إلى مصدر طاقة محدد
+        """
+        try:
+            powersource = self.get_object()
+            
+            if request.method == 'GET':
+                # جلب القواطع المرتبطة بمصدر الطاقة
+                breakers = CircuitBreaker.objects.filter(power_source=powersource)
+                serializer = CircuitBreakerSerializer(breakers, many=True)
+                return Response(serializer.data)
+            
+            elif request.method == 'POST':
+                try:
+                    # طباعة بيانات الطلب للتشخيص
+                    print(f"POST breaker data: {request.data}")
+                    
+                    # التحقق من البيانات الأساسية المطلوبة
+                    required_fields = ['name', 'rated_current']
+                    missing_fields = [field for field in required_fields if not request.data.get(field)]
+                    
+                    if missing_fields:
+                        missing_fields_str = ", ".join(missing_fields)
+                        return Response(
+                            {f: f"حقل {f} مطلوب" for f in missing_fields},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # إعداد البيانات مع ربط مصدر الطاقة
+                    breaker_data = request.data.copy()
+                    breaker_data['power_source'] = powersource.id
+                    
+                    # تعيين دور القاطع ليكون رئيسياً إذا لم يتم تحديده
+                    if not breaker_data.get('breaker_role'):
+                        breaker_data['breaker_role'] = 'main'
+                    
+                    # استخدام السيريلايزر لإنشاء القاطع
+                    serializer = CircuitBreakerSerializer(data=breaker_data)
+                    
+                    if serializer.is_valid():
+                        breaker = serializer.save()
+                        return Response(serializer.data, status=status.HTTP_201_CREATED)
+                    
+                    # إرجاع أخطاء التحقق من صحة البيانات
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+                except Exception as e:
+                    # تسجيل تفاصيل الخطأ للمساعدة في التشخيص
+                    import traceback
+                    error_message = str(e)
+                    error_trace = traceback.format_exc()
+                    print(f"Error adding breaker to power source: {error_message}")
+                    print(f"Traceback: {error_trace}")
+                    
+                    # إرجاع رسالة خطأ واضحة للمستخدم
+                    return Response(
+                        {'error': f'حدث خطأ أثناء إضافة القاطع: {error_message}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+        except PowerSource.DoesNotExist:
+            return Response({'error': 'مصدر الطاقة المحدد غير موجود'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # تسجيل الخطأ العام
+            import traceback
+            print(f"General error in power source breakers endpoint: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            
+            return Response({'error': f'حدث خطأ: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class PanelViewSet(viewsets.ModelViewSet):
     """

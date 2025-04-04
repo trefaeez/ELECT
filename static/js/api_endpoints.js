@@ -161,6 +161,34 @@ export const PowerSourceAPI = {
      */
     setMainBreaker: async function(id, breakerId) {
         return await apiRequest(`${API_BASE_URL}/powersources/${id}/set_main_breaker/`, 'POST', { breaker_id: breakerId });
+    },
+    
+    /**
+     * إزالة القاطع الرئيسي لمصدر الطاقة
+     * @param {number} id - معرف مصدر الطاقة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    removeMainBreaker: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/powersources/${id}/remove_main_breaker/`, 'POST');
+    },
+    
+    /**
+     * الحصول على القواطع المرتبطة بمصدر طاقة
+     * @param {number} id - معرف مصدر الطاقة
+     * @returns {Promise} وعد بالاستجابة
+     */
+    getBreakers: async function(id) {
+        return await apiRequest(`${API_BASE_URL}/powersources/${id}/breakers/`);
+    },
+    
+    /**
+     * إضافة قاطع جديد لمصدر طاقة
+     * @param {number} id - معرف مصدر الطاقة
+     * @param {Object} data - بيانات القاطع
+     * @returns {Promise} وعد بالاستجابة
+     */
+    addBreaker: async function(id, data) {
+        return await apiRequest(`${API_BASE_URL}/powersources/${id}/breakers/`, 'POST', data);
     }
 };
 

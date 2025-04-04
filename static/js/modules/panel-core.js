@@ -117,6 +117,10 @@ async function loadPowerSourcesDropdown() {
         
         if (result.success) {
             allPowerSources = result.data;
+            
+            // جعل البيانات متاحة عالمياً للاستخدام في الواجهة
+            window.allPowerSources = result.data;
+            
             updatePowerSourcesDropdown(result.data);
         } else {
             showAlert(`فشل تحميل مصادر الطاقة: ${result.error.message}`, 'danger');
@@ -181,13 +185,27 @@ async function loadPanels() {
         if (result.success) {
             allPanels = result.data;
             
+            // جعل بيانات اللوحات متاحة عالمياً
+            window.allPanels = result.data;
+            
             // تطبيق الفلاتر
             let filteredPanels = allPanels;
             
             if (selectedPowerSourceId) {
-                filteredPanels = filteredPanels.filter(panel => 
-                    panel.power_source && panel.power_source.id == selectedPowerSourceId
-                );
+                filteredPanels = filteredPanels.filter(panel => {
+                    // تحسين طريقة فحص معرف مصدر الطاقة
+                    if (!panel.power_source) return false;
+                    
+                    // يمكن أن يكون panel.power_source رقم أو كائن
+                    if (typeof panel.power_source === 'object') {
+                        return panel.power_source.id == selectedPowerSourceId;
+                    } else {
+                        return panel.power_source == selectedPowerSourceId;
+                    }
+                });
+                
+                // طباعة معلومات للتصحيح
+                console.log(`تم تصفية اللوحات حسب مصدر الطاقة ${selectedPowerSourceId}. عدد اللوحات المتبقية: ${filteredPanels.length}`);
             }
             
             if (selectedPanelTypeFilter) {

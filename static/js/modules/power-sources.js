@@ -88,13 +88,18 @@ function updatePowerSourcesTable(powerSources) {
     const tableBody = document.getElementById('power-sources-table-body');
     
     if (powerSources.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="text-center">لا توجد مصادر طاقة مسجلة</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="7" class="text-center">لا توجد مصادر طاقة مسجلة</td></tr>';
         return;
     }
     
     let tableHTML = '';
     
     powerSources.forEach(source => {
+        // تحضير معلومات القاطع الرئيسي إن وجد
+        const mainBreakerInfo = source.main_breaker_details ? 
+            `<span class="badge bg-success">متصل بقاطع رئيسي</span>` : 
+            `<span class="badge bg-warning text-dark">لا يوجد</span>`;
+            
         tableHTML += `
             <tr data-id="${source.id}">
                 <td>${source.id}</td>
@@ -102,10 +107,14 @@ function updatePowerSourcesTable(powerSources) {
                 <td>${getSourceTypeDisplay(source.source_type)}</td>
                 <td>${getVoltageDisplay(source.voltage)}</td>
                 <td>${source.total_ampacity} A</td>
+                <td>${mainBreakerInfo}</td>
                 <td class="action-buttons">
                     <a href="/panels?source=${source.id}" class="btn btn-sm btn-primary">
                         <i class="fas fa-server"></i> اللوحات
                     </a>
+                    <button class="btn btn-sm btn-success manage-breakers" data-id="${source.id}" data-name="${source.name}">
+                        <i class="fas fa-plug"></i> القواطع
+                    </button>
                     <button class="btn btn-sm btn-info edit-power-source" data-id="${source.id}">
                         <i class="fas fa-edit"></i> تعديل
                     </button>
@@ -128,6 +137,14 @@ function updatePowerSourcesTable(powerSources) {
         button.addEventListener('click', (e) => {
             const btn = e.target.closest('button');
             deletePowerSource(btn.dataset.id, btn.dataset.name);
+        });
+    });
+    
+    // إضافة مستمع الحدث لأزرار إدارة القواطع
+    document.querySelectorAll('.manage-breakers').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            manageSourceBreakers(btn.dataset.id, btn.dataset.name);
         });
     });
 }
@@ -260,4 +277,14 @@ async function confirmDelete() {
         console.error('خطأ في حذف مصدر الطاقة:', error);
         showAlert('حدث خطأ غير متوقع أثناء حذف مصدر الطاقة', 'danger');
     }
+}
+
+/**
+ * فتح صفحة إدارة القواطع لمصدر طاقة معين
+ * @param {number} sourceId - معرّف مصدر الطاقة
+ * @param {string} sourceName - اسم مصدر الطاقة
+ */
+function manageSourceBreakers(sourceId, sourceName) {
+    // الانتقال إلى صفحة القواطع مع تمرير معرّف مصدر الطاقة كمعلمة في العنوان
+    window.location.href = `/breakers?source=${sourceId}`;
 }

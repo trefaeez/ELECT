@@ -58,11 +58,15 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="mb-0"><i class="fas fa-toggle-on text-warning"></i> القواطع الكهربائية</h1>
             <div>
+                <select id="breaker-filter-source" class="form-select d-inline-block me-2" style="width: auto;">
+                    <option value="">كل مصادر الطاقة</option>
+                    <!-- سيتم إضافة الخيارات ديناميكياً -->
+                </select>
                 <select id="breaker-filter-panel" class="form-select d-inline-block me-2" style="width: auto;">
                     <option value="">كل اللوحات</option>
                     <!-- سيتم إضافة الخيارات ديناميكياً -->
                 </select>
-                <button class="btn btn-warning" id="add-breaker-btn" disabled>
+                <button class="btn btn-warning" id="add-breaker-btn">
                     <i class="fas fa-plus"></i> إضافة قاطع
                 </button>
             </div>
@@ -117,9 +121,18 @@
                 <div class="modal-body">
                     <form id="add-breaker-form">
                         <input type="hidden" id="breaker-panel-id">
+                        <input type="hidden" id="breaker-source-id">
                         <div class="mb-3">
-                            <label for="breaker-name" class="form-label">اسم القاطع</label>
-                            <input type="text" class="form-control" id="breaker-name">
+                            <label for="breaker-name" class="form-label">اسم القاطع <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="breaker-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="breaker-role" class="form-label">دور القاطع <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-role" required>
+                                <option value="distribution">قاطع توزيع</option>
+                                <option value="main">قاطع رئيسي</option>
+                                <option value="sub_main">قاطع رئيسي فرعي</option>
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label for="breaker-type" class="form-label">نوع القاطع <span class="text-danger">*</span></label>
@@ -137,7 +150,7 @@
                             <select class="form-select" id="breaker-poles" required>
                                 <option value="1">1 قطب</option>
                                 <option value="2">2 قطب</option>
-                                <option value="3">3 أقطاب</option>
+                                <option value="3" selected>3 أقطاب</option>
                                 <option value="4">4 أقطاب</option>
                             </select>
                         </div>
@@ -149,8 +162,26 @@
                             <label for="breaker-trip-curve" class="form-label">منحنى الفصل</label>
                             <input type="text" class="form-control" id="breaker-trip-curve" placeholder="مثال: B، C، D" value="C">
                         </div>
-                        <div class="alert alert-info">
-                            سيتم ربط القاطع تلقائيًا باللوحة المحددة
+                        <div class="mb-3">
+                            <label for="breaker-connection-type" class="form-label">نوع الاتصال <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-connection-type" required>
+                                <option value="panel">ربط باللوحة</option>
+                                <option value="source">ربط بمصدر الطاقة</option>
+                            </select>
+                        </div>
+                        <div id="panel-connection-section" class="mb-3">
+                            <label for="breaker-panel-selector" class="form-label">اللوحة المرتبطة <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-panel-selector">
+                                <option value="">-- اختر لوحة --</option>
+                                <!-- ستتم إضافة الخيارات ديناميكياً -->
+                            </select>
+                        </div>
+                        <div id="source-connection-section" class="mb-3" style="display: none;">
+                            <label for="breaker-source-selector" class="form-label">مصدر الطاقة المرتبط <span class="text-danger">*</span></label>
+                            <select class="form-select" id="breaker-source-selector">
+                                <option value="">-- اختر مصدر طاقة --</option>
+                                <!-- ستتم إضافة الخيارات ديناميكياً -->
+                            </select>
                         </div>
                     </form>
                 </div>

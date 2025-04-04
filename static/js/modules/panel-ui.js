@@ -27,10 +27,42 @@ function loadPanelsTable(panels) {
     panels.forEach(panel => {
         // تحديد مصدر التغذية (إما مصدر طاقة أو لوحة أم)
         let powerSourceInfo = '-';
-        if (panel.power_source) {
-            powerSourceInfo = `<span class="badge bg-primary">مصدر طاقة:</span> ${panel.power_source.name}`;
-        } else if (panel.parent_panel) {
-            powerSourceInfo = `<span class="badge bg-success">لوحة أم:</span> ${panel.parent_panel.name}`;
+        
+        if (panel.power_source_details) {
+            // أولاً، محاولة استخدام power_source_details إذا كان متوفراً
+            powerSourceInfo = `<span class="badge bg-primary">مصدر طاقة:</span> ${panel.power_source_details.name || '#' + panel.power_source_details.id}`;
+        }
+        else if (panel.power_source) {
+            // ثانياً، استخدام power_source إذا كان كائناً
+            if (typeof panel.power_source === 'object' && panel.power_source !== null) {
+                powerSourceInfo = `<span class="badge bg-primary">مصدر طاقة:</span> ${panel.power_source.name || '#' + panel.power_source.id}`;
+            } 
+            // ثالثاً، البحث عن اسم مصدر الطاقة في المصفوفة العامة إذا كان معرّفاً رقمياً
+            else if (panel.power_source) {
+                const powerSourceId = typeof panel.power_source === 'number' ? panel.power_source : parseInt(panel.power_source);
+                
+                // البحث في المتغير العام للعثور على الاسم
+                const powerSource = window.allPowerSources?.find(ps => ps.id === powerSourceId);
+                powerSourceInfo = `<span class="badge bg-primary">مصدر طاقة:</span> ${powerSource?.name || '#' + powerSourceId}`;
+            }
+        }
+        else if (panel.parent_panel_details) {
+            // استخدام parent_panel_details إذا كان متوفراً
+            powerSourceInfo = `<span class="badge bg-success">لوحة أم:</span> ${panel.parent_panel_details.name || '#' + panel.parent_panel_details.id}`;
+        }
+        else if (panel.parent_panel) {
+            // استخدام parent_panel إذا كان كائناً
+            if (typeof panel.parent_panel === 'object' && panel.parent_panel !== null) {
+                powerSourceInfo = `<span class="badge bg-success">لوحة أم:</span> ${panel.parent_panel.name || '#' + panel.parent_panel.id}`;
+            } 
+            // البحث عن اسم اللوحة الأم في المصفوفة العامة إذا كان معرّفاً رقمياً
+            else if (panel.parent_panel) {
+                const parentPanelId = typeof panel.parent_panel === 'number' ? panel.parent_panel : parseInt(panel.parent_panel);
+                
+                // البحث في المتغير العام للعثور على الاسم
+                const parentPanel = window.allPanels?.find(p => p.id === parentPanelId);
+                powerSourceInfo = `<span class="badge bg-success">لوحة أم:</span> ${parentPanel?.name || '#' + parentPanelId}`;
+            }
         }
         
         // تحضير المسار الكامل للوحة
