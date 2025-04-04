@@ -22,7 +22,8 @@ from .views import (
     panels_view,
     loads_view,
     breakers_view,
-    gojs_network_visualizer_view  # إضافة وظيفة عرض GoJS Network Visualizer
+    network_visualizer_view,
+    panel_tree_visualizer_view
 )
 
 # إضافة وظائف عرض للمرئيات
@@ -70,6 +71,5 @@ urlpatterns = [
     
     # إضافة مسارات المرئيات
     path('network-visualizer/', network_visualizer_view, name='network_visualizer'),
-    path('gojs-network-visualizer/', gojs_network_visualizer_view, name='gojs_network_visualizer'),
     path('panel-tree-visualizer/', panel_tree_visualizer_view, name='panel_tree_visualizer'),
 ]

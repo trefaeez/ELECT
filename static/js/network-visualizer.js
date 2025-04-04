@@ -117,37 +117,77 @@ function setupDragAndZoom() {
     });
     
     // إنهاء السحب
-    svgElement.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', () => {
         isDragging = false;
-        svgElement.style.cursor = 'default';
+        if (svgElement) svgElement.style.cursor = 'default';
     });
     
     // إلغاء السحب عند مغادرة العنصر
     svgElement.addEventListener('mouseleave', () => {
-        isDragging = false;
-        svgElement.style.cursor = 'default';
+        // لا نقوم بإلغاء السحب هنا لنتيح إمكانية السحب خارج حدود العنصر
+        svgElement.style.cursor = isDragging ? 'grabbing' : 'default';
     });
     
     // التكبير/التصغير باستخدام عجلة الفأرة
     svgElement.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const delta = -Math.sign(e.deltaY) * 0.1;
-        const newZoomLevel = Math.max(0.1, Math.min(3, zoomLevel + delta));
+        
+        // تعديل مقدار التكبير/التصغير
+        const zoomSpeed = 0.12; // زيادة سرعة الزوم
+        const delta = -Math.sign(e.deltaY) * zoomSpeed;
+        
+        // ضمان أن مستوى التكبير ضمن الحدود المعقولة
+        const minZoom = 0.1; // أقل مستوى تكبير
+        const maxZoom = 5;   // أقصى مستوى تكبير
+        
+        // حساب المستوى الجديد
+        const newZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoomLevel + delta));
         
         // محافظة على نقطة التركيز أثناء التكبير/التصغير
         const rect = svgElement.getBoundingClientRect();
-        const mousePos = {
-            x: e.clientX - rect.left - panOffset.x,
-            y: e.clientY - rect.top - panOffset.y
-        };
         
-        const scaleFactor = newZoomLevel / zoomLevel;
-        panOffset.x -= mousePos.x * (scaleFactor - 1);
-        panOffset.y -= mousePos.y * (scaleFactor - 1);
+        // حساب الموقع الفعلي للفأرة بالنسبة للمخطط
+        const mouseX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+        const mouseY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
         
+        // تعديل الإزاحة لضمان بقاء نقطة الفأرة ثابتة أثناء التكبير
+        panOffset.x -= mouseX * (newZoomLevel - zoomLevel);
+        panOffset.y -= mouseY * (newZoomLevel - zoomLevel);
+        
+        // تطبيق مستوى التكبير الجديد
         zoomLevel = newZoomLevel;
+        
+        // تحديث عامل التحويل للمخطط
         updateTransform();
+        
+        // عرض مستوى التكبير الحالي للمستخدم (اختياري)
+        updateZoomDisplay();
     });
+}
+
+/**
+ * تحديث عرض مستوى التكبير الحالي (اختياري)
+ */
+function updateZoomDisplay() {
+    // يمكن إضافة عنصر HTML لعرض مستوى التكبير
+    const zoomDisplayElement = document.getElementById('zoomLevel');
+    if (zoomDisplayElement) {
+        zoomDisplayElement.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
+}
+
+/**
+ * تحديث حالة التحويل (التكبير والتنقل)
+ */
+function updateTransform() {
+    // تطبيق التحويل على المجموعات المختلفة
+    const transformValue = `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`;
+    nodesGroup.style.transform = transformValue;
+    edgesGroup.style.transform = transformValue;
+    
+    // إضافة نقطة أصل التحويل للحفاظ على مركز التكبير
+    nodesGroup.style.transformOrigin = '0 0';
+    edgesGroup.style.transformOrigin = '0 0';
 }
 
 /**
@@ -277,6 +317,57 @@ function renderNodes() {
                 break;
         }
         
+        // إضافة أيقونة طي/توسيع للوحات ومصادر الطاقة
+        if (node.data.entityType === 'powerSource' || node.data.entityType === 'panel') {
+            // التحقق مما إذا كان للعقدة أبناء
+            const hasChildren = checkForChildren(node.id);
+            
+            if (hasChildren) {
+                const collapseButton = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                collapseButton.setAttribute('class', 'collapse-button');
+                collapseButton.setAttribute('cursor', 'pointer');
+                collapseButton.setAttribute('data-node-id', node.id);
+                
+                // حالة الطي الافتراضية
+                const isCollapsed = node.data.collapsed || false;
+                
+                // إضافة الخلفية للزر
+                const buttonBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                buttonBg.setAttribute('cx', (node.style?.width || 150) - 15);
+                buttonBg.setAttribute('cy', 20);
+                buttonBg.setAttribute('r', 8);
+                buttonBg.setAttribute('fill', '#ffffff');
+                buttonBg.setAttribute('stroke', '#222138');
+                buttonBg.setAttribute('stroke-width', '1');
+                
+                // إضافة أيقونة الزر (+ أو -)
+                const buttonIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                buttonIcon.setAttribute('x', (node.style?.width || 150) - 15);
+                buttonIcon.setAttribute('y', 24);
+                buttonIcon.setAttribute('text-anchor', 'middle');
+                buttonIcon.setAttribute('font-family', 'Arial, sans-serif');
+                buttonIcon.setAttribute('font-size', '14px');
+                buttonIcon.setAttribute('fill', '#222138');
+                buttonIcon.textContent = isCollapsed ? '+' : '-';
+                
+                // إضافة الزر إلى المجموعة
+                collapseButton.appendChild(buttonBg);
+                collapseButton.appendChild(buttonIcon);
+                
+                // إضافة حدث النقر لتبديل حالة الطي
+                collapseButton.addEventListener('click', (e) => {
+                    e.stopPropagation(); // منع انتشار الحدث (لتجنب تحديد العقدة)
+                    toggleCollapseNode(node.id);
+                });
+                
+                // إضافة الزر إلى مجموعة العقدة
+                nodeGroup.appendChild(collapseButton);
+                
+                // إضافة صفة للإشارة إلى الحالة الحالية
+                nodeGroup.setAttribute('data-collapsed', isCollapsed);
+            }
+        }
+        
         // إضافة معالج الحدث للنقر على العقدة
         nodeGroup.addEventListener('click', () => selectNode(node));
         
@@ -287,6 +378,185 @@ function renderNodes() {
         
         // إضافة العقدة إلى المجموعة
         nodesGroup.appendChild(nodeGroup);
+    });
+}
+
+/**
+ * التحقق مما إذا كان للعقدة عناصر تابعة لها
+ * @param {string} nodeId - معرّف العقدة
+ * @returns {boolean} - ما إذا كان للعقدة أبناء أم لا
+ */
+function checkForChildren(nodeId) {
+    // إذا كان من نوع مصدر طاقة، نبحث عن اللوحات المرتبطة به
+    if (nodeId.startsWith('ps-')) {
+        const sourceId = nodeId.replace('ps-', '');
+        const childPanels = networkData.hierarchy?.powerSources[sourceId]?.childPanels || [];
+        return childPanels.length > 0;
+    }
+    
+    // إذا كان من نوع لوحة، نبحث عن اللوحات الفرعية والقواطع التابعة
+    else if (nodeId.startsWith('panel-')) {
+        const panelId = nodeId.replace('panel-', '');
+        const panel = networkData.hierarchy?.panels[panelId];
+        if (panel) {
+            const hasChildPanels = panel.childPanels && panel.childPanels.length > 0;
+            const hasBreakers = panel.breakers && panel.breakers.length > 0;
+            return hasChildPanels || hasBreakers;
+        }
+    }
+    
+    // إذا كان من نوع قاطع، نبحث عن الأحمال المرتبطة
+    else if (nodeId.startsWith('breaker-')) {
+        const breakerId = nodeId.replace('breaker-', '');
+        const breaker = networkData.hierarchy?.breakers[breakerId];
+        if (breaker) {
+            return breaker.loads && breaker.loads.length > 0;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * تبديل حالة طي/توسيع العقدة والعناصر التابعة لها
+ * @param {string} nodeId - معرّف العقدة
+ */
+function toggleCollapseNode(nodeId) {
+    const node = findNodeById(nodeId);
+    if (!node) return;
+    
+    // تبديل حالة الطي
+    node.data.collapsed = !node.data.collapsed;
+    const isCollapsed = node.data.collapsed;
+    
+    // تحديث مظهر زر الطي/التوسيع
+    const nodeElement = document.getElementById(`node-${nodeId}`);
+    if (nodeElement) {
+        nodeElement.setAttribute('data-collapsed', isCollapsed);
+        const buttonIcon = nodeElement.querySelector('.collapse-button text');
+        if (buttonIcon) {
+            buttonIcon.textContent = isCollapsed ? '+' : '-';
+        }
+    }
+    
+    // تحديث حالة الرؤية للعناصر التابعة
+    updateChildrenVisibility(nodeId, !isCollapsed);
+    
+    // إعادة رسم المسارات
+    updateEdgesVisibility();
+    
+    // تعديل المخطط حسب العناصر المرئية حالياً
+    fitNetworkToView();
+}
+
+/**
+ * تحديث رؤية العناصر التابعة لعقدة معينة
+ * @param {string} parentId - معرّف العقدة الأب
+ * @param {boolean} isVisible - حالة الرؤية
+ * @param {boolean} recursive - ما إذا كان يجب تطبيق التغيير بشكل متكرر على الأبناء
+ */
+function updateChildrenVisibility(parentId, isVisible, recursive = true) {
+    // إذا كان من نوع مصدر طاقة
+    if (parentId.startsWith('ps-')) {
+        const sourceId = parentId.replace('ps-', '');
+        const childPanels = networkData.hierarchy?.powerSources[sourceId]?.childPanels || [];
+        
+        // تحديث رؤية اللوحات التابعة
+        childPanels.forEach(panelId => {
+            const panelNodeId = `panel-${panelId}`;
+            updateNodeVisibility(panelNodeId, isVisible);
+            
+            // إذا كان التطبيق متكرراً، انتقل إلى الأبناء
+            if (recursive && isVisible) {
+                updateChildrenVisibility(panelNodeId, isVisible, true);
+            }
+        });
+    }
+    
+    // إذا كان من نوع لوحة
+    else if (parentId.startsWith('panel-')) {
+        const panelId = parentId.replace('panel-', '');
+        const panel = networkData.hierarchy?.panels[panelId];
+        
+        // تحديث رؤية اللوحات الفرعية
+        if (panel && panel.childPanels) {
+            panel.childPanels.forEach(childPanelId => {
+                const childPanelNodeId = `panel-${childPanelId}`;
+                updateNodeVisibility(childPanelNodeId, isVisible);
+                
+                // إذا كان التطبيق متكرراً، انتقل إلى الأبناء
+                if (recursive && isVisible) {
+                    updateChildrenVisibility(childPanelNodeId, isVisible, true);
+                }
+            });
+        }
+        
+        // تحديث رؤية القواطع التابعة
+        if (panel && panel.breakers) {
+            panel.breakers.forEach(breakerId => {
+                const breakerNodeId = `breaker-${breakerId}`;
+                updateNodeVisibility(breakerNodeId, isVisible);
+                
+                // إذا كان التطبيق متكرراً، انتقل إلى الأحمال
+                if (recursive && isVisible) {
+                    updateChildrenVisibility(breakerNodeId, isVisible, true);
+                }
+            });
+        }
+    }
+    
+    // إذا كان من نوع قاطع
+    else if (parentId.startsWith('breaker-')) {
+        const breakerId = parentId.replace('breaker-', '');
+        const breaker = networkData.hierarchy?.breakers[breakerId];
+        
+        // تحديث رؤية الأحمال التابعة
+        if (breaker && breaker.loads) {
+            breaker.loads.forEach(loadId => {
+                const loadNodeId = `load-${loadId}`;
+                updateNodeVisibility(loadNodeId, isVisible);
+            });
+        }
+    }
+}
+
+/**
+ * تحديث رؤية عقدة معينة
+ * @param {string} nodeId - معرّف العقدة
+ * @param {boolean} isVisible - حالة الرؤية
+ */
+function updateNodeVisibility(nodeId, isVisible) {
+    const nodeElement = document.getElementById(`node-${nodeId}`);
+    if (nodeElement) {
+        nodeElement.style.display = isVisible ? 'block' : 'none';
+    }
+    
+    // تحديث حالة العقدة في البيانات
+    const node = findNodeById(nodeId);
+    if (node) {
+        node.visible = isVisible;
+    }
+}
+
+/**
+ * تحديث رؤية حواف الشبكة بناءً على رؤية العقد
+ */
+function updateEdgesVisibility() {
+    networkData.edges.forEach(edge => {
+        const edgeElement = document.getElementById(`edge-${edge.id}`);
+        if (!edgeElement) return;
+        
+        // التحقق من رؤية العقد المتصلة بالحافة
+        const sourceNode = findNodeById(edge.source);
+        const targetNode = findNodeById(edge.target);
+        
+        const sourceVisible = sourceNode && (sourceNode.visible !== false) && 
+                            getTypeVisibility(sourceNode.data.entityType);
+        const targetVisible = targetNode && (targetNode.visible !== false) && 
+                            getTypeVisibility(targetNode.data.entityType);
+        
+        // إظهار الحافة فقط إذا كان كلا الطرفين مرئيين
+        edgeElement.style.display = (sourceVisible && targetVisible) ? 'block' : 'none';
     });
 }
 
@@ -470,15 +740,6 @@ function createDirectPanelToLoadConnections() {
 // ------------------- التفاعل والتحديثات -------------------
 
 /**
- * تحديث حالة التحويل (التكبير والتنقل)
- */
-function updateTransform() {
-    const transformValue = `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`;
-    nodesGroup.style.transform = transformValue;
-    edgesGroup.style.transform = transformValue;
-}
-
-/**
  * ملاءمة المخطط للعرض
  */
 function fitNetworkToView() {
@@ -488,19 +749,39 @@ function fitNetworkToView() {
     let minX = Infinity, minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
     
-    networkData.nodes.forEach(node => {
-        const width = node.style?.width || 150;
-        const height = 40;
-        
-        minX = Math.min(minX, node.position.x);
-        minY = Math.min(minY, node.position.y);
-        maxX = Math.max(maxX, node.position.x + width);
-        maxY = Math.max(maxY, node.position.y + height);
+    // تحديد حدود جميع العناصر المرئية فقط
+    const visibleNodes = networkData.nodes.filter(node => {
+        // فحص ما إذا كان النوع مرئيًا حسب الفلاتر
+        return getTypeVisibility(node.data.entityType);
     });
     
+    if (visibleNodes.length === 0) {
+        // لا توجد عناصر مرئية، استخدم جميع العناصر
+        networkData.nodes.forEach(node => {
+            const width = node.style?.width || 150;
+            const height = 40;
+            
+            minX = Math.min(minX, node.position.x);
+            minY = Math.min(minY, node.position.y);
+            maxX = Math.max(maxX, node.position.x + width);
+            maxY = Math.max(maxY, node.position.y + height);
+        });
+    } else {
+        // استخدم العناصر المرئية فقط
+        visibleNodes.forEach(node => {
+            const width = node.style?.width || 150;
+            const height = 40;
+            
+            minX = Math.min(minX, node.position.x);
+            minY = Math.min(minY, node.position.y);
+            maxX = Math.max(maxX, node.position.x + width);
+            maxY = Math.max(maxY, node.position.y + height);
+        });
+    }
+    
     // إضافة هامش
-    const marginX = 50;
-    const marginY = 50;
+    const marginX = 100;
+    const marginY = 100;
     minX -= marginX;
     minY -= marginY;
     maxX += marginX;
@@ -516,13 +797,15 @@ function fitNetworkToView() {
     // حساب مستوى التكبير المناسب
     const scaleX = containerWidth / graphWidth;
     const scaleY = containerHeight / graphHeight;
-    zoomLevel = Math.min(scaleX, scaleY);
+    zoomLevel = Math.min(scaleX, scaleY, 2.0); // تقييد المستوى الأقصى للتكبير
     
     // حساب الإزاحة للتوسيط
-    panOffset.x = containerWidth / 2 - ((minX + maxX) / 2) * zoomLevel;
-    panOffset.y = containerHeight / 2 - ((minY + maxY) / 2) * zoomLevel;
+    panOffset.x = (containerWidth / 2) - ((minX + maxX) / 2) * zoomLevel;
+    panOffset.y = (containerHeight / 2) - ((minY + maxY) / 2) * zoomLevel;
     
+    // تطبيق التغييرات
     updateTransform();
+    updateZoomDisplay();
 }
 
 /**
@@ -1050,193 +1333,11 @@ async function loadNetworkData() {
         const breakers = breakersResponse.data;
         const loads = loadsResponse.data;
         
-        // إعداد العقد (nodes)
-        networkData.nodes = [];
+        // تهيئة العلاقات والهيكل الشجري
+        buildNetworkHierarchy(powerSources, panels, breakers, loads);
         
-        // إضافة مصادر الطاقة
-        let xPos = 100;
-        let yPos = 100;
-        
-        powerSources.forEach((source, index) => {
-            networkData.nodes.push({
-                id: `ps-${source.id}`,
-                type: 'input',
-                data: { 
-                    label: source.name,
-                    entityType: 'powerSource',
-                    sourceData: source 
-                },
-                position: { x: xPos, y: yPos },
-                style: { 
-                    background: typeColors.powerSource, 
-                    color: 'white',
-                    border: '1px solid #222138',
-                    width: 180,
-                    borderRadius: '5px'
-                }
-            });
-            xPos += 300;
-            if ((index + 1) % 3 === 0) {
-                xPos = 100;
-                yPos += 150;
-            }
-        });
-        
-        // إضافة اللوحات
-        xPos = 150;
-        yPos += 150;
-        
-        panels.forEach((panel, index) => {
-            networkData.nodes.push({
-                id: `panel-${panel.id}`,
-                data: { 
-                    label: panel.name,
-                    entityType: 'panel',
-                    sourceData: panel 
-                },
-                position: { x: xPos, y: yPos },
-                style: { 
-                    background: typeColors.panel, 
-                    color: 'white',
-                    border: '1px solid #222138',
-                    width: 180,
-                    borderRadius: '5px'
-                }
-            });
-            xPos += 250;
-            if ((index + 1) % 4 === 0) {
-                xPos = 150;
-                yPos += 120;
-            }
-        });
-        
-        // إضافة القواطع
-        xPos = 200;
-        yPos += 150;
-        
-        breakers.forEach((breaker, index) => {
-            networkData.nodes.push({
-                id: `breaker-${breaker.id}`,
-                data: { 
-                    label: breaker.name || `قاطع ${breaker.id}`,
-                    entityType: 'circuitBreaker',
-                    sourceData: breaker 
-                },
-                position: { x: xPos, y: yPos },
-                style: { 
-                    background: typeColors.circuitBreaker, 
-                    color: '#333',
-                    border: '1px solid #222138',
-                    width: 150,
-                    borderRadius: '5px'
-                }
-            });
-            xPos += 200;
-            if ((index + 1) % 5 === 0) {
-                xPos = 200;
-                yPos += 100;
-            }
-        });
-        
-        // إضافة الأحمال
-        xPos = 250;
-        yPos += 150;
-        
-        loads.forEach((load, index) => {
-            networkData.nodes.push({
-                id: `load-${load.id}`,
-                type: 'output',
-                data: { 
-                    label: load.name,
-                    entityType: 'load',
-                    sourceData: load 
-                },
-                position: { x: xPos, y: yPos },
-                style: { 
-                    background: typeColors.load, 
-                    color: 'white',
-                    border: '1px solid #222138',
-                    width: 150,
-                    borderRadius: '5px'
-                }
-            });
-            xPos += 180;
-            if ((index + 1) % 6 === 0) {
-                xPos = 250;
-                yPos += 80;
-            }
-        });
-        
-        // إعداد الحواف (edges)
-        networkData.edges = [];
-        
-        // روابط مصادر الطاقة إلى اللوحات
-        panels.forEach(panel => {
-            if (panel.power_source) {
-                networkData.edges.push({
-                    id: `ps${panel.power_source}-panel${panel.id}`,
-                    source: `ps-${panel.power_source}`,
-                    target: `panel-${panel.id}`,
-                    animated: true,
-                    style: { stroke: typeColors.powerSource },
-                    label: 'يغذي'
-                });
-            }
-        });
-        
-        // روابط اللوحات الأم إلى اللوحات الفرعية
-        panels.forEach(panel => {
-            if (panel.parent_panel) {
-                networkData.edges.push({
-                    id: `panel${panel.parent_panel}-panel${panel.id}`,
-                    source: `panel-${panel.parent_panel}`,
-                    target: `panel-${panel.id}`,
-                    animated: true,
-                    style: { stroke: typeColors.panel },
-                    label: 'أم'
-                });
-            }
-        });
-        
-        // روابط اللوحات إلى القواطع
-        breakers.forEach(breaker => {
-            if (breaker.panel) {
-                networkData.edges.push({
-                    id: `panel${breaker.panel}-breaker${breaker.id}`,
-                    source: `panel-${breaker.panel}`,
-                    target: `breaker-${breaker.id}`,
-                    style: { stroke: typeColors.panel }
-                });
-            }
-        });
-        
-        // روابط القواطع إلى الأحمال
-        loads.forEach(load => {
-            if (load.breaker) {
-                networkData.edges.push({
-                    id: `breaker${load.breaker}-load${load.id}`,
-                    source: `breaker-${load.breaker}`,
-                    target: `load-${load.id}`,
-                    style: { stroke: typeColors.load }
-                });
-            }
-        });
-        
-        // روابط للقواطع المغذية
-        breakers.forEach(breaker => {
-            if (breaker.feeding_breakers && breaker.feeding_breakers.length > 0) {
-                breaker.feeding_breakers.forEach(feederId => {
-                    networkData.edges.push({
-                        id: `breaker${feederId}-breaker${breaker.id}`,
-                        source: `breaker-${feederId}`,
-                        target: `breaker-${breaker.id}`,
-                        animated: true,
-                        style: { stroke: typeColors.circuitBreaker, strokeDasharray: '5, 5' },
-                        label: 'يغذي'
-                    });
-                });
-            }
-        });
+        // توزيع العناصر بشكل متوازن على المخطط
+        positionNetworkElements();
         
         console.log('تم تحميل بيانات الشبكة بنجاح:', networkData);
         return true;
@@ -1244,6 +1345,421 @@ async function loadNetworkData() {
         console.error('خطأ في تحميل بيانات الشبكة:', error);
         return false;
     }
+}
+
+/**
+ * بناء هيكل شجري للشبكة الكهربائية
+ * @param {Array} powerSources - مصادر الطاقة
+ * @param {Array} panels - اللوحات الكهربائية
+ * @param {Array} breakers - القواطع
+ * @param {Array} loads - الأحمال
+ */
+function buildNetworkHierarchy(powerSources, panels, breakers, loads) {
+    networkData.nodes = [];
+    networkData.edges = [];
+    
+    // إنشاء نظام لتتبع العلاقات بين العناصر
+    const hierarchy = {
+        powerSources: {},
+        panels: {},
+        breakers: {},
+        loads: {}
+    };
+    
+    // إضافة مصادر الطاقة
+    powerSources.forEach(source => {
+        const nodeId = `ps-${source.id}`;
+        networkData.nodes.push({
+            id: nodeId,
+            type: 'input',
+            data: { 
+                label: source.name,
+                entityType: 'powerSource',
+                sourceData: source,
+                children: []
+            },
+            position: { x: 0, y: 0 }, // سيتم تحديد الإحداثيات لاحقاً
+            style: { 
+                background: typeColors.powerSource, 
+                color: 'white',
+                border: '1px solid #222138',
+                width: 180,
+                borderRadius: '5px'
+            }
+        });
+        
+        // إضافة للهيكل التتبعي
+        hierarchy.powerSources[source.id] = { 
+            nodeId, 
+            childPanels: [] 
+        };
+    });
+    
+    // إضافة اللوحات وربطها بمصادر الطاقة
+    panels.forEach(panel => {
+        const nodeId = `panel-${panel.id}`;
+        networkData.nodes.push({
+            id: nodeId,
+            data: { 
+                label: panel.name,
+                entityType: 'panel',
+                sourceData: panel,
+                children: []
+            },
+            position: { x: 0, y: 0 }, // سيتم تحديد الإحداثيات لاحقاً
+            style: { 
+                background: typeColors.panel, 
+                color: 'white',
+                border: '1px solid #222138',
+                width: 180,
+                borderRadius: '5px'
+            }
+        });
+        
+        // إضافة للهيكل التتبعي
+        hierarchy.panels[panel.id] = { 
+            nodeId,
+            powerSourceId: panel.power_source,
+            parentPanelId: panel.parent_panel,
+            childPanels: [],
+            breakers: []
+        };
+        
+        // ربط اللوحة بمصدر الطاقة
+        if (panel.power_source) {
+            networkData.edges.push({
+                id: `ps${panel.power_source}-panel${panel.id}`,
+                source: `ps-${panel.power_source}`,
+                target: nodeId,
+                animated: true,
+                style: { stroke: typeColors.powerSource },
+                label: 'يغذي'
+            });
+            
+            // تحديث الهيكل التتبعي
+            const powerSource = hierarchy.powerSources[panel.power_source];
+            if (powerSource) {
+                powerSource.childPanels.push(panel.id);
+            }
+        }
+        
+        // ربط اللوحة بلوحة الأم
+        if (panel.parent_panel) {
+            networkData.edges.push({
+                id: `panel${panel.parent_panel}-panel${panel.id}`,
+                source: `panel-${panel.parent_panel}`,
+                target: nodeId,
+                animated: true,
+                style: { stroke: typeColors.panel },
+                label: 'أم'
+            });
+            
+            // تحديث الهيكل التتبعي
+            const parentPanel = hierarchy.panels[panel.parent_panel];
+            if (parentPanel) {
+                parentPanel.childPanels.push(panel.id);
+            }
+        }
+    });
+    
+    // إضافة القواطع وربطها باللوحات
+    breakers.forEach(breaker => {
+        const nodeId = `breaker-${breaker.id}`;
+        networkData.nodes.push({
+            id: nodeId,
+            data: { 
+                label: breaker.name || `قاطع ${breaker.id}`,
+                entityType: 'circuitBreaker',
+                sourceData: breaker,
+                children: []
+            },
+            position: { x: 0, y: 0 }, // سيتم تحديد الإحداثيات لاحقاً
+            style: { 
+                background: typeColors.circuitBreaker, 
+                color: '#333',
+                border: '1px solid #222138',
+                width: 150,
+                borderRadius: '5px'
+            }
+        });
+        
+        // إضافة للهيكل التتبعي
+        hierarchy.breakers[breaker.id] = { 
+            nodeId,
+            panelId: breaker.panel,
+            feedingBreakers: breaker.feeding_breakers || [],
+            loads: []
+        };
+        
+        // ربط القاطع باللوحة
+        if (breaker.panel) {
+            networkData.edges.push({
+                id: `panel${breaker.panel}-breaker${breaker.id}`,
+                source: `panel-${breaker.panel}`,
+                target: nodeId,
+                style: { stroke: typeColors.panel }
+            });
+            
+            // تحديث الهيكل التتبعي
+            const panel = hierarchy.panels[breaker.panel];
+            if (panel) {
+                panel.breakers.push(breaker.id);
+            }
+        }
+        
+        // ربط القواطع المغذية
+        if (breaker.feeding_breakers && breaker.feeding_breakers.length > 0) {
+            breaker.feeding_breakers.forEach(feederId => {
+                networkData.edges.push({
+                    id: `breaker${feederId}-breaker${breaker.id}`,
+                    source: `breaker-${feederId}`,
+                    target: nodeId,
+                    animated: true,
+                    style: { stroke: typeColors.circuitBreaker, strokeDasharray: '5, 5' },
+                    label: 'يغذي'
+                });
+            });
+        }
+    });
+    
+    // إضافة الأحمال وربطها بالقواطع
+    loads.forEach(load => {
+        const nodeId = `load-${load.id}`;
+        networkData.nodes.push({
+            id: nodeId,
+            type: 'output',
+            data: { 
+                label: load.name,
+                entityType: 'load',
+                sourceData: load 
+            },
+            position: { x: 0, y: 0 }, // سيتم تحديد الإحداثيات لاحقاً
+            style: { 
+                background: typeColors.load, 
+                color: 'white',
+                border: '1px solid #222138',
+                width: 150,
+                borderRadius: '5px'
+            }
+        });
+        
+        // إضافة للهيكل التتبعي
+        hierarchy.loads[load.id] = { 
+            nodeId,
+            breakerId: load.breaker
+        };
+        
+        // ربط الحمل بالقاطع
+        if (load.breaker) {
+            networkData.edges.push({
+                id: `breaker${load.breaker}-load${load.id}`,
+                source: `breaker-${load.breaker}`,
+                target: nodeId,
+                style: { stroke: typeColors.load }
+            });
+            
+            // تحديث الهيكل التتبعي
+            const breaker = hierarchy.breakers[load.breaker];
+            if (breaker) {
+                breaker.loads.push(load.id);
+            }
+        }
+    });
+    
+    // حفظ الهيكل للاستخدام لاحقاً
+    networkData.hierarchy = hierarchy;
+    
+    // إنشاء الروابط المباشرة بين اللوحات والأحمال
+    createDirectPanelToLoadConnections();
+}
+
+/**
+ * توزيع عناصر الشبكة بشكل تلقائي ومتوازن
+ */
+function positionNetworkElements() {
+    const hierarchy = networkData.hierarchy;
+    
+    // المسافات والأبعاد الثابتة - زيادة المسافات لتقليل التداخل
+    const LEVEL_HEIGHT = 250;  // زيادة المسافة الرأسية بين المستويات
+    const NODE_WIDTH = 200;    // زيادة عرض العقدة
+    const NODE_SPACING = 100;  // زيادة المسافة الأفقية بين العقد
+    
+    let currentY = 50;  // بداية من أعلى قليلاً
+    
+    // حساب عدد العناصر في كل مستوى للتوزيع الأفضل
+    function calculateLevelWidths() {
+        const levelWidths = new Map();
+        
+        // المستوى الأول: مصادر الطاقة
+        const powerSources = Object.values(hierarchy.powerSources);
+        levelWidths.set(0, powerSources.length);
+        
+        // المستوى الثاني: اللوحات الرئيسية
+        let mainPanels = 0;
+        powerSources.forEach(source => {
+            mainPanels += source.childPanels.length;
+        });
+        levelWidths.set(1, mainPanels);
+        
+        // المستويات الأخرى: اللوحات الفرعية والقواطع والأحمال
+        let currentLevel = 2;
+        let hasMore = true;
+        
+        while (hasMore) {
+            hasMore = false;
+            let count = 0;
+            
+            Object.values(hierarchy.panels).forEach(panel => {
+                const depth = calculatePanelDepth(panel.nodeId);
+                if (depth === currentLevel) {
+                    count += panel.breakers.length;
+                    hasMore = true;
+                }
+            });
+            
+            if (hasMore) {
+                levelWidths.set(currentLevel, count);
+                currentLevel++;
+            }
+        }
+        
+        return levelWidths;
+    }
+    
+    // حساب عمق اللوحة في الهيكل الشجري
+    function calculatePanelDepth(panelId) {
+        let depth = 0;
+        let currentPanel = hierarchy.panels[panelId.replace('panel-', '')];
+        
+        while (currentPanel && currentPanel.parentPanelId) {
+            depth++;
+            currentPanel = hierarchy.panels[currentPanel.parentPanelId];
+        }
+        
+        return depth;
+    }
+    
+    // توزيع مصادر الطاقة في الأعلى
+    const powerSources = Object.values(hierarchy.powerSources);
+    const powerSourceWidth = (powerSources.length * NODE_WIDTH) + ((powerSources.length - 1) * NODE_SPACING);
+    let startX = window.innerWidth / 2 - (powerSourceWidth / 2);  // توسيط في وسط الشاشة
+    
+    powerSources.forEach((source, index) => {
+        const node = findNodeById(source.nodeId);
+        if (node) {
+            node.position = {
+                x: startX + (index * (NODE_WIDTH + NODE_SPACING)),
+                y: currentY
+            };
+        }
+    });
+    
+    // توزيع اللوحات والعناصر التابعة بشكل منظم
+    function positionChildren(parentId, level, parentX) {
+        const children = [];
+        let totalWidth = 0;
+        
+        // جمع جميع العناصر التابعة
+        if (parentId.startsWith('ps-')) {
+            const source = hierarchy.powerSources[parentId.replace('ps-', '')];
+            if (source) {
+                children.push(...source.childPanels.map(id => ({
+                    type: 'panel',
+                    id: `panel-${id}`
+                })));
+            }
+        } else if (parentId.startsWith('panel-')) {
+            const panel = hierarchy.panels[parentId.replace('panel-', '')];
+            if (panel) {
+                // إضافة اللوحات الفرعية أولاً
+                children.push(...panel.childPanels.map(id => ({
+                    type: 'panel',
+                    id: `panel-${id}`
+                })));
+                
+                // ثم إضافة القواطع
+                children.push(...panel.breakers.map(id => ({
+                    type: 'breaker',
+                    id: `breaker-${id}`
+                })));
+            }
+        } else if (parentId.startsWith('breaker-')) {
+            const breaker = hierarchy.breakers[parentId.replace('breaker-', '')];
+            if (breaker) {
+                children.push(...breaker.loads.map(id => ({
+                    type: 'load',
+                    id: `load-${id}`
+                })));
+            }
+        }
+        
+        if (children.length === 0) return 0;
+        
+        // حساب العرض الكلي المطلوب
+        totalWidth = (children.length * NODE_WIDTH) + ((children.length - 1) * NODE_SPACING);
+        let startX = parentX - (totalWidth / 2) + (NODE_WIDTH / 2);
+        
+        // توزيع العناصر
+        children.forEach((child, index) => {
+            const node = findNodeById(child.id);
+            if (node) {
+                const x = startX + (index * (NODE_WIDTH + NODE_SPACING));
+                const y = currentY + (level * LEVEL_HEIGHT);
+                
+                node.position = { x, y };
+                
+                // توزيع العناصر التابعة بشكل متكرر
+                positionChildren(child.id, level + 1, x);
+            }
+        });
+        
+        return totalWidth;
+    }
+    
+    // بدء التوزيع من مصادر الطاقة
+    currentY += LEVEL_HEIGHT;
+    powerSources.forEach(source => {
+        const sourceNode = findNodeById(source.nodeId);
+        if (sourceNode) {
+            positionChildren(source.nodeId, 1, sourceNode.position.x);
+        }
+    });
+
+    // تحديث المسارات بعد التوزيع
+    updateEdgePaths();
+}
+
+// تحديث مسارات التوصيل لتجنب التداخل
+function updateEdgePaths() {
+    networkData.edges.forEach(edge => {
+        const sourceNode = findNodeById(edge.source);
+        const targetNode = findNodeById(edge.target);
+        
+        if (!sourceNode || !targetNode) return;
+        
+        // حساب نقاط التحكم للمنحنى
+        const sourceX = sourceNode.position.x + (sourceNode.style?.width || 150) / 2;
+        const sourceY = sourceNode.position.y + 40; // نهاية العقدة المصدر
+        const targetX = targetNode.position.x + (targetNode.style?.width || 150) / 2;
+        const targetY = targetNode.position.y; // بداية العقدة الهدف
+        
+        // حساب نقاط التحكم للمنحنى بيزير
+        const dx = Math.abs(targetX - sourceX);
+        const dy = Math.abs(targetY - sourceY);
+        const curve = Math.min(dx / 2, 100); // تقليل انحناء المنحنى
+        
+        // إنشاء مسار منحني
+        const path = `M ${sourceX},${sourceY} 
+                     C ${sourceX},${sourceY + curve} 
+                       ${targetX},${targetY - curve} 
+                       ${targetX},${targetY}`;
+        
+        // تحديث المسار
+        const edgeElement = document.getElementById(`edge-${edge.id}`);
+        if (edgeElement) {
+            edgeElement.setAttribute('d', path);
+        }
+    });
 }
 
 // ينفذ عند تحميل المستند
