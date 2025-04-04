@@ -402,12 +402,40 @@
                 
                 // ربط أزرار التحكم
                 document.getElementById('btnExportImage').addEventListener('click', exportAsImage);
+                document.getElementById('btnResetView').addEventListener('click', resetView);
+                
+                // ربط أزرار التحكم بالتكبير والتصغير
+                document.getElementById('btnZoomIn').addEventListener('click', () => {
+                    zoomLevel = Math.min(3, zoomLevel + 0.1);
+                    updateTransform();
+                });
+                
+                document.getElementById('btnZoomOut').addEventListener('click', () => {
+                    zoomLevel = Math.max(0.1, zoomLevel - 0.1);
+                    updateTransform();
+                });
+                
+                document.getElementById('btnFitView').addEventListener('click', fitNetworkToView);
                 
                 // ربط أحداث فلاتر العرض
-                document.getElementById('showPowerSources').addEventListener('change', () => console.log('تغير فلتر مصادر الطاقة'));
-                document.getElementById('showPanels').addEventListener('change', () => console.log('تغير فلتر اللوحات'));
-                document.getElementById('showBreakers').addEventListener('change', () => console.log('تغير فلتر القواطع'));
-                document.getElementById('showLoads').addEventListener('change', () => console.log('تغير فلتر الأحمال'));
+                document.getElementById('showPowerSources').addEventListener('change', (e) => {
+                    toggleNodeTypeVisibility('powerSource', e.target.checked);
+                });
+                
+                document.getElementById('showPanels').addEventListener('change', (e) => {
+                    toggleNodeTypeVisibility('panel', e.target.checked);
+                });
+                
+                document.getElementById('showBreakers').addEventListener('change', (e) => {
+                    toggleNodeTypeVisibility('circuitBreaker', e.target.checked);
+                });
+                
+                document.getElementById('showLoads').addEventListener('change', (e) => {
+                    toggleNodeTypeVisibility('load', e.target.checked);
+                });
+                
+                // تهيئة عرض الشبكة التفاعلي
+                initializeNetworkVisualizer();
                 
             } catch (error) {
                 console.error('حدث خطأ أثناء تهيئة الصفحة:', error);

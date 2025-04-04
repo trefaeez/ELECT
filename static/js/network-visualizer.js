@@ -1,1208 +1,1262 @@
 /**
- * ملف JavaScript للتعامل مع عرض الشبكة التفاعلية
- * هذا الملف يوفر واجهة بديلة لمكتبة ReactFlow 
- * ويسمح بعرض مخطط الشبكة الكهربائية بشكل تفاعلي
+ * network-visualizer.js
+ * مخطط تفاعلي للشبكة الكهربائية باستخدام SVG و JavaScript
  */
 
-// عند تحميل الصفحة
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('تم تحميل ملف network-visualizer.js المحلي بنجاح');
-    
-    // تهيئة التطبيق عند تحميل جميع المكتبات
-    initNetworkVisualizer();
-});
+// المتغيرات العالمية
+let networkContainer;      // حاوية SVG الرئيسية
+let svgElement;           // عنصر SVG
+let nodesGroup;           // مجموعة SVG للعقد
+let edgesGroup;           // مجموعة SVG للحواف
+let selectedNode = null;  // العقدة المحددة حاليًا
+let zoomLevel = 1;        // مستوى التكبير الحالي
+let panOffset = { x: 0, y: 0 }; // إزاحة التنقل الحالية
+let isDragging = false;   // حالة السحب
+let dragStart = { x: 0, y: 0 }; // نقطة بداية السحب
+let directPanelToLoadEdges = []; // الحواف المباشرة بين اللوحات والأحمال
+
+// قواميس للترجمة والألوان (استخدام نفس القواميس المعرفة في HTML)
+// وهي متغيرات عالمية معرفة مسبقاً في ملف HTML
+// const typeColors = {
+//     'powerSource': '#dc3545', 
+//     'panel': '#198754',      
+//     'circuitBreaker': '#ffc107', 
+//     'load': '#0d6efd'         
+// };
+
+// const typeNames = {
+//     'powerSource': 'مصدر طاقة',
+//     'panel': 'لوحة كهربائية',
+//     'circuitBreaker': 'قاطع كهربائي',
+//     'load': 'حمل كهربائي',
+//     'main': 'رئيسية',
+//     'sub_main': 'رئيسية فرعية',
+//     'sub': 'فرعية',
+//     'distribution': 'توزيع',
+//     'main_circuit_breaker': 'قاطع رئيسي',
+//     'copper': 'نحاس',
+//     'aluminum': 'ألمنيوم'
+// };
+
+// ------------------- التهيئة والإعداد -------------------
 
 /**
- * تهيئة مكونات المخطط التفاعلي
+ * تهيئة المخطط التفاعلي
  */
-function initNetworkVisualizer() {
-    // التحقق من وجود المكتبات المطلوبة
-    if (typeof React === 'undefined') {
-        console.error('مكتبة React غير محملة!');
-        displayErrorMessage('مكتبة React غير محملة. يرجى التأكد من تحميل جميع المكتبات المطلوبة.');
+function initializeNetworkVisualizer() {
+    // التأكد من تحميل البيانات
+    if (!networkData || !networkData.nodes || !networkData.nodes.length) {
+        console.error('لم يتم تحميل بيانات الشبكة');
         return;
     }
     
-    if (typeof ReactDOM === 'undefined') {
-        console.error('مكتبة ReactDOM غير محملة!');
-        displayErrorMessage('مكتبة ReactDOM غير محملة. يرجى التأكد من تحميل جميع المكتبات المطلوبة.');
-        return;
-    }
+    // إعداد حاوية SVG
+    networkContainer = document.getElementById('networkContainer');
     
-    // إذا كانت مكتبة ReactFlow غير محملة، استخدم البديل المبسط
-    if (typeof window.ReactFlow === 'undefined') {
-        console.warn('مكتبة ReactFlow غير محملة، سيتم استخدام البديل المبسط');
-        initSimpleNetworkGraph();
-        return;
-    }
+    // إنشاء عنصر SVG
+    svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgElement.setAttribute('width', '100%');
+    svgElement.setAttribute('height', '100%');
+    svgElement.setAttribute('class', 'network-graph');
+    
+    // إنشاء المجموعات الرئيسية للعناصر
+    edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    edgesGroup.setAttribute('class', 'edges-group');
+    nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    nodesGroup.setAttribute('class', 'nodes-group');
+    
+    // إضافة المجموعات إلى عنصر SVG
+    svgElement.appendChild(edgesGroup);
+    svgElement.appendChild(nodesGroup);
+    
+    // إضافة عنصر SVG إلى الحاوية
+    networkContainer.appendChild(svgElement);
+    
+    // إعداد قابلية السحب والتكبير/التصغير
+    setupDragAndZoom();
+    
+    // إضافة أحداث التغيير للفلاتر
+    setupFilterEvents();
+    
+    // إضافة أحداث التحكم للأزرار
+    setupControlButtons();
+    
+    // إنشاء الروابط المباشرة للوحات والأحمال (للاستخدام عندما تكون القواطع مخفية)
+    createDirectPanelToLoadConnections();
+    
+    // عرض الشبكة بشكل افتراضي
+    renderNetwork();
+    
+    // إخفاء مؤشر التحميل
+    document.getElementById('loadingIndicator').style.display = 'none';
 }
 
 /**
- * عرض رسالة خطأ في الواجهة
- * @param {string} message - نص رسالة الخطأ
+ * إعداد أحداث السحب والتكبير/التصغير
  */
-function displayErrorMessage(message) {
-    const container = document.getElementById('networkContainer');
-    const loadingIndicator = document.getElementById('loadingIndicator');
-    
-    if (loadingIndicator) {
-        loadingIndicator.style.display = 'none';
-    }
-    
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'alert alert-danger text-center p-4 m-3';
-    errorDiv.innerHTML = `
-        <h4><i class="fas fa-exclamation-circle"></i> خطأ</h4>
-        <p>${message}</p>
-        <p class="mt-3">
-            <button onclick="location.reload()" class="btn btn-outline-danger">
-                <i class="fas fa-sync"></i> إعادة تحميل الصفحة
-            </button>
-        </p>
-    `;
-    
-    // إضافة رسالة الخطأ إلى الحاوية
-    container.appendChild(errorDiv);
-}
-
-/**
- * تهيئة عرض الشبكة المبسط باستخدام SVG
- * هذه الوظيفة تستخدم كبديل عندما لا تتوفر مكتبة ReactFlow
- */
-function initSimpleNetworkGraph() {
-    const container = document.getElementById('networkContainer');
-    const loadingIndicator = document.getElementById('loadingIndicator');
-    
-    if (loadingIndicator) {
-        loadingIndicator.style.display = 'flex';
-    }
-    
-    // إنشاء عنصر SVG للرسم البياني
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
-    svg.style.backgroundColor = '#f8f8f8';
-    
-    // إضافة SVG إلى الحاوية
-    container.appendChild(svg);
-    
-    // إضافة مجموعة للحواف وأخرى للعقد
-    const edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    edgesGroup.setAttribute('class', 'edges');
-    
-    const nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    nodesGroup.setAttribute('class', 'nodes');
-    
-    svg.appendChild(edgesGroup);
-    svg.appendChild(nodesGroup);
-    
-    // تحميل بيانات الشبكة
-    loadNetworkData().then(data => {
-        if (data) {
-            // رسم الشبكة
-            renderNetwork(nodesGroup, edgesGroup, networkData);
-            
-            // تطبيق الفلتر الافتراضي لإخفاء القواطع عند بدء التشغيل
-            hideAllBreakers();
-            
-            // إنشاء الروابط المباشرة بين اللوحات والأحمال
-            updateDirectPanelToLoadConnections();
-            
-            // إضافة التفاعلية
-            setupInteractivity(svg, nodesGroup, edgesGroup);
-            
-            // ربط أزرار التحكم
-            setupControlButtons(svg, nodesGroup, edgesGroup);
-            
-            // إخفاء مؤشر التحميل
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
-        }
-    }).catch(error => {
-        console.error('خطأ في تحميل بيانات الشبكة:', error);
-        displayErrorMessage('حدث خطأ أثناء تحميل بيانات الشبكة. يرجى المحاولة مرة أخرى.');
-    });
-}
-
-/**
- * إخفاء جميع القواطع عند بدء تشغيل المخطط
- */
-function hideAllBreakers() {
-    // إخفاء القواطع
-    networkData.nodes.forEach(node => {
-        if (node.data.entityType === 'circuitBreaker') {
-            const breakerElement = document.getElementById(node.id);
-            if (breakerElement) {
-                breakerElement.style.display = 'none';
-            }
+function setupDragAndZoom() {
+    // بدء السحب
+    svgElement.addEventListener('mousedown', (e) => {
+        if (e.button === 0) { // زر الفأرة الأيسر فقط
+            isDragging = true;
+            dragStart = {
+                x: e.clientX - panOffset.x,
+                y: e.clientY - panOffset.y
+            };
+            svgElement.style.cursor = 'grabbing';
         }
     });
     
-    // إخفاء الروابط بين اللوحات والقواطع
-    networkData.edges.forEach(edge => {
-        if (edge.source.startsWith('panel-') && edge.target.startsWith('breaker-')) {
-            const edgeElement = document.getElementById(edge.id);
-            if (edgeElement) {
-                edgeElement.style.display = 'none';
-            }
-        }
-        
-        // إخفاء الروابط بين القواطع والأحمال أيضاً
-        if (edge.source.startsWith('breaker-') && edge.target.startsWith('load-')) {
-            const edgeElement = document.getElementById(edge.id);
-            if (edgeElement) {
-                edgeElement.style.display = 'none';
-            }
-        }
-    });
-}
-
-/**
- * رسم الشبكة باستخدام SVG
- * @param {SVGElement} nodesGroup - مجموعة العقد
- * @param {SVGElement} edgesGroup - مجموعة الحواف
- * @param {Object} data - بيانات الشبكة
- */
-function renderNetwork(nodesGroup, edgesGroup, data) {
-    // رسم الحواف أولاً
-    data.edges.forEach(edge => {
-        const sourceNode = data.nodes.find(node => node.id === edge.source);
-        const targetNode = data.nodes.find(node => node.id === edge.target);
-        
-        if (!sourceNode || !targetNode) return;
-        
-        // الحصول على الإحداثيات
-        const sourceX = sourceNode.position.x + 75; // وسط العقدة
-        const sourceY = sourceNode.position.y + 20;
-        const targetX = targetNode.position.x + 75;
-        const targetY = targetNode.position.y + 20;
-        
-        // إنشاء منحنى بيزير بسيط
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('id', edge.id);
-        path.setAttribute('stroke', edge.style.stroke || '#888');
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('fill', 'none');
-        
-        // إذا كان منقطاً
-        if (edge.style.strokeDasharray) {
-            path.setAttribute('stroke-dasharray', edge.style.strokeDasharray);
-        }
-        
-        // حساب منحنى المسار
-        const dx = Math.abs(targetX - sourceX) * 0.3;
-        const pathData = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
-        path.setAttribute('d', pathData);
-        
-        edgesGroup.appendChild(path);
-        
-        // إضافة اسم الحافة إذا وجد
-        if (edge.label) {
-            const midX = (sourceX + targetX) / 2;
-            const midY = (sourceY + targetY) / 2 - 10;
-            
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', midX);
-            text.setAttribute('y', midY);
-            text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '12');
-            text.textContent = edge.label;
-            
-            edgesGroup.appendChild(text);
+    // التنقل أثناء السحب
+    svgElement.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            panOffset.x = e.clientX - dragStart.x;
+            panOffset.y = e.clientY - dragStart.y;
+            updateTransform();
         }
     });
     
-    // رسم العقد
-    data.nodes.forEach(node => {
-        const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        nodeGroup.setAttribute('id', node.id);
-        nodeGroup.setAttribute('class', `node ${node.data.entityType}`);
-        nodeGroup.setAttribute('transform', `translate(${node.position.x}, ${node.position.y})`);
-        
-        // إنشاء المستطيل الخاص بالعقدة
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('width', node.style.width || '150');
-        rect.setAttribute('height', '40');
-        rect.setAttribute('rx', '5');
-        rect.setAttribute('ry', '5');
-        rect.setAttribute('fill', node.style.background || '#999');
-        rect.setAttribute('stroke', node.style.border || '#222138');
-        rect.setAttribute('stroke-width', '1');
-        
-        // إنشاء نص العقدة
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', (node.style.width / 2) || '75');
-        text.setAttribute('y', '20');
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('fill', node.style.color || 'white');
-        text.setAttribute('font-family', 'Arial');
-        text.setAttribute('font-size', '14');
-        text.textContent = node.data.label;
-        
-        // إضافة العناصر إلى مجموعة العقدة
-        nodeGroup.appendChild(rect);
-        nodeGroup.appendChild(text);
-        
-        // إضافة معالج الحدث عند النقر على العقدة
-        nodeGroup.addEventListener('click', () => handleNodeClick(node));
-        
-        // إضافة العقدة إلى مجموعة العقد
-        nodesGroup.appendChild(nodeGroup);
-    });
-}
-
-/**
- * إضافة التفاعلية للمخطط
- * @param {SVGElement} svg - عنصر SVG الرئيسي
- * @param {SVGElement} nodesGroup - مجموعة العقد
- * @param {SVGElement} edgesGroup - مجموعة الحواف
- */
-function setupInteractivity(svg, nodesGroup, edgesGroup) {
-    let dragging = false;
-    let panStartX, panStartY;
-    let translateX = 0, translateY = 0;
-    let scale = 1;
-    
-    // تحديث التحويل
-    const updateTransform = () => {
-        nodesGroup.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
-        edgesGroup.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
-    };
-    
-    // معالجة بدء التحريك
-    svg.addEventListener('mousedown', (event) => {
-        if (event.target === svg) {
-            dragging = true;
-            panStartX = event.clientX - translateX;
-            panStartY = event.clientY - translateY;
-            svg.style.cursor = 'grabbing';
-        }
+    // إنهاء السحب
+    svgElement.addEventListener('mouseup', () => {
+        isDragging = false;
+        svgElement.style.cursor = 'default';
     });
     
-    // معالجة التحريك
-    window.addEventListener('mousemove', (event) => {
-        if (!dragging) return;
-        
-        translateX = event.clientX - panStartX;
-        translateY = event.clientY - panStartY;
-        updateTransform();
+    // إلغاء السحب عند مغادرة العنصر
+    svgElement.addEventListener('mouseleave', () => {
+        isDragging = false;
+        svgElement.style.cursor = 'default';
     });
     
-    // معالجة نهاية التحريك
-    window.addEventListener('mouseup', () => {
-        dragging = false;
-        svg.style.cursor = 'default';
-    });
-    
-    // معالجة التكبير/التصغير
-    svg.addEventListener('wheel', (event) => {
-        event.preventDefault();
+    // التكبير/التصغير باستخدام عجلة الفأرة
+    svgElement.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = -Math.sign(e.deltaY) * 0.1;
+        const newZoomLevel = Math.max(0.1, Math.min(3, zoomLevel + delta));
         
-        const delta = event.deltaY < 0 ? 1.1 : 0.9;
-        scale *= delta;
+        // محافظة على نقطة التركيز أثناء التكبير/التصغير
+        const rect = svgElement.getBoundingClientRect();
+        const mousePos = {
+            x: e.clientX - rect.left - panOffset.x,
+            y: e.clientY - rect.top - panOffset.y
+        };
         
-        // تقييد التكبير
-        scale = Math.max(0.2, Math.min(2, scale));
+        const scaleFactor = newZoomLevel / zoomLevel;
+        panOffset.x -= mousePos.x * (scaleFactor - 1);
+        panOffset.y -= mousePos.y * (scaleFactor - 1);
         
+        zoomLevel = newZoomLevel;
         updateTransform();
     });
 }
 
 /**
- * ربط أزرار التحكم بالتكبير والتصغير
- * @param {SVGElement} svg - عنصر SVG الرئيسي
- * @param {SVGElement} nodesGroup - مجموعة العقد
- * @param {SVGElement} edgesGroup - مجموعة الحواف
+ * إعداد أحداث فلاتر العرض
  */
-function setupControlButtons(svg, nodesGroup, edgesGroup) {
-    let translateX = 0, translateY = 0;
-    let scale = 1;
+function setupFilterEvents() {
+    // مصادر الطاقة
+    document.getElementById('showPowerSources').addEventListener('change', (e) => {
+        toggleNodeTypeVisibility('powerSource', e.target.checked);
+    });
     
-    // تحديث التحويل
-    const updateTransform = () => {
-        nodesGroup.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
-        edgesGroup.setAttribute('transform', `translate(${translateX}, ${translateY}) scale(${scale})`);
-    };
+    // اللوحات الكهربائية
+    document.getElementById('showPanels').addEventListener('change', (e) => {
+        toggleNodeTypeVisibility('panel', e.target.checked);
+    });
     
+    // القواطع الكهربائية
+    document.getElementById('showBreakers').addEventListener('change', (e) => {
+        toggleNodeTypeVisibility('circuitBreaker', e.target.checked);
+    });
+    
+    // الأحمال الكهربائية
+    document.getElementById('showLoads').addEventListener('change', (e) => {
+        toggleNodeTypeVisibility('load', e.target.checked);
+    });
+}
+
+/**
+ * إعداد أزرار التحكم في المخطط
+ */
+function setupControlButtons() {
     // زر التكبير
     document.getElementById('btnZoomIn').addEventListener('click', () => {
-        scale *= 1.1;
-        scale = Math.min(2, scale);
+        zoomLevel = Math.min(3, zoomLevel + 0.1);
         updateTransform();
     });
     
     // زر التصغير
     document.getElementById('btnZoomOut').addEventListener('click', () => {
-        scale *= 0.9;
-        scale = Math.max(0.2, scale);
-        updateTransform();
-    });
-    
-    // زر إعادة الضبط
-    document.getElementById('btnResetView').addEventListener('click', () => {
-        translateX = 0;
-        translateY = 0;
-        scale = 1;
+        zoomLevel = Math.max(0.1, zoomLevel - 0.1);
         updateTransform();
     });
     
     // زر ملاءمة العرض
-    document.getElementById('btnFitView').addEventListener('click', () => {
-        translateX = 0;
-        translateY = 0;
-        scale = 1;
-        updateTransform();
-    });
+    document.getElementById('btnFitView').addEventListener('click', fitNetworkToView);
     
-    // زر تصدير الصورة
-    document.getElementById('btnExportImage').addEventListener('click', exportAsImage);
-    
-    // فلاتر العرض
-    document.getElementById('showPowerSources').addEventListener('change', () => applyFilters(nodesGroup, edgesGroup));
-    document.getElementById('showPanels').addEventListener('change', () => applyFilters(nodesGroup, edgesGroup));
-    document.getElementById('showBreakers').addEventListener('change', () => applyFilters(nodesGroup, edgesGroup));
-    document.getElementById('showLoads').addEventListener('change', () => applyFilters(nodesGroup, edgesGroup));
+    // زر إعادة ضبط العرض
+    document.getElementById('btnResetView').addEventListener('click', resetView);
 }
 
-// تعريف مجموعة العناصر النشطة (المحددة) في المخطط
-let activeElements = new Set();
-let activePaths = []; // مسارات التغذية والأحمال النشطة
+// ------------------- عرض ورسم المخطط -------------------
 
 /**
- * معالجة النقر على العقدة
- * @param {Object} node - بيانات العقدة
+ * رسم المخطط التفاعلي للشبكة
  */
-function handleNodeClick(node) {
-    const detailsTitle = document.getElementById('detailsTitle');
-    const detailsContent = document.getElementById('detailsContent');
+function renderNetwork() {
+    // مسح المحتوى السابق
+    nodesGroup.innerHTML = '';
+    edgesGroup.innerHTML = '';
     
-    // تمييز العقدة المحددة
-    highlightNode(node.id);
+    // رسم الحواف أولاً (لتكون خلف العقد)
+    renderEdges();
     
-    // إضافة أو إزالة العنصر من العناصر النشطة
-    if (activeElements.has(node.id)) {
-        activeElements.delete(node.id);
-        if (node.data.entityType === 'panel') {
-            // إخفاء القواطع المرتبطة عند إلغاء تحديد اللوحة
-            hideRelatedBreakers(node.id);
+    // رسم العقد
+    renderNodes();
+    
+    // تطبيق الفلاتر الحالية
+    applyCurrentFilters();
+    
+    // ملاءمة العرض للمخطط
+    fitNetworkToView();
+}
+
+/**
+ * رسم العقد (العناصر الكهربائية)
+ */
+function renderNodes() {
+    networkData.nodes.forEach(node => {
+        // إنشاء مجموعة للعقدة
+        const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        nodeGroup.setAttribute('id', `node-${node.id}`);
+        nodeGroup.setAttribute('class', `network-node ${node.data.entityType}-node`);
+        nodeGroup.setAttribute('transform', `translate(${node.position.x},${node.position.y})`);
+        
+        // إنشاء المستطيل الرئيسي للعقدة
+        const nodeRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        nodeRect.setAttribute('width', node.style?.width || 150);
+        nodeRect.setAttribute('height', 40);
+        nodeRect.setAttribute('rx', node.style?.borderRadius?.replace('px', '') || 5);
+        nodeRect.setAttribute('ry', node.style?.borderRadius?.replace('px', '') || 5);
+        nodeRect.setAttribute('fill', node.style?.background || getTypeColor(node.data.entityType));
+        nodeRect.setAttribute('stroke', node.style?.border?.split(' ')[2] || '#222138');
+        nodeRect.setAttribute('stroke-width', 1);
+        
+        // إنشاء نص العقدة
+        const nodeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        nodeText.setAttribute('x', (node.style?.width || 150) / 2);
+        nodeText.setAttribute('y', 25);
+        nodeText.setAttribute('text-anchor', 'middle');
+        nodeText.setAttribute('dominant-baseline', 'middle');
+        nodeText.setAttribute('fill', node.style?.color || 'white');
+        nodeText.setAttribute('font-family', 'Arial, sans-serif');
+        nodeText.setAttribute('font-size', '14px');
+        nodeText.textContent = node.data.label;
+        
+        // أيقونة للنوع (اختيارية)
+        const nodeIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        nodeIcon.setAttribute('x', 15);
+        nodeIcon.setAttribute('y', 22);
+        nodeIcon.setAttribute('font-family', 'FontAwesome');
+        nodeIcon.setAttribute('font-size', '14px');
+        nodeIcon.setAttribute('fill', node.style?.color || 'white');
+        
+        // تحديد رمز الأيقونة حسب نوع العنصر
+        switch (node.data.entityType) {
+            case 'powerSource':
+                nodeIcon.textContent = '\uf0e7'; // bolt
+                break;
+            case 'panel':
+                nodeIcon.textContent = '\uf1e6'; // plug
+                break;
+            case 'circuitBreaker':
+                nodeIcon.textContent = '\uf1e0'; // share-alt
+                break;
+            case 'load':
+                nodeIcon.textContent = '\uf0eb'; // lightbulb
+                break;
         }
-    } else {
-        activeElements.add(node.id);
-        if (node.data.entityType === 'panel') {
-            // إظهار القواطع المرتبطة عند تحديد اللوحة
-            showRelatedBreakers(node.id);
-        } else if (node.data.entityType === 'circuitBreaker') {
-            // إظهار الأحمال المرتبطة عند تحديد القاطع
-            showRelatedLoads(node.id);
+        
+        // إضافة معالج الحدث للنقر على العقدة
+        nodeGroup.addEventListener('click', () => selectNode(node));
+        
+        // تجميع العناصر
+        nodeGroup.appendChild(nodeRect);
+        nodeGroup.appendChild(nodeIcon);
+        nodeGroup.appendChild(nodeText);
+        
+        // إضافة العقدة إلى المجموعة
+        nodesGroup.appendChild(nodeGroup);
+    });
+}
+
+/**
+ * رسم الحواف (الروابط بين العناصر)
+ */
+function renderEdges() {
+    networkData.edges.forEach(edge => {
+        // البحث عن العقد المصدر والهدف
+        const sourceNode = findNodeById(edge.source);
+        const targetNode = findNodeById(edge.target);
+        
+        if (!sourceNode || !targetNode) {
+            console.warn(`لا يمكن رسم الحافة: العقدة المصدر أو الهدف غير موجودة: ${edge.source} -> ${edge.target}`);
+            return;
         }
-    }
-    
-    // إضاءة مسارات التغذية للعنصر
-    highlightPowerPath(node.id);
-    
-    // عرض التفاصيل
-    const nodeType = node.data.entityType;
-    const nodeData = node.data.sourceData;
-    
-    // تحديد العنوان حسب نوع العنصر
-    const nodeTypeName = typeNames[nodeType] || nodeType;
-    detailsTitle.innerHTML = `<i class="fas fa-info-circle"></i> ${nodeTypeName}: ${node.data.label}`;
-    
-    // إنشاء جدول لعرض التفاصيل
-    let tableContent = '<table class="node-details-table w-100">';
-    
-    switch (nodeType) {
-        case 'powerSource':
-            tableContent += `
-                <tr><td>النوع</td><td>${typeNames[nodeData.source_type] || nodeData.source_type}</td></tr>
-                <tr><td>الجهد</td><td>${nodeData.voltage}</td></tr>
-                <tr><td>الأمبير الكلي</td><td>${nodeData.total_ampacity || '-'} أمبير</td></tr>
-                <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
-                <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
-                <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
-                <tr><td>عدد الكابلات</td><td>${nodeData.cable_quantity || '1'}</td></tr>
-            `;
-            break;
+        
+        // حساب نقاط بداية ونهاية الحافة
+        const sourceWidth = sourceNode.style?.width || 150;
+        const targetWidth = targetNode.style?.width || 150;
+        const sourceHeight = 40; // ارتفاع العقدة المصدر
+        const targetHeight = 40; // ارتفاع العقدة الهدف
+        
+        // نقطة البداية (مركز أسفل العقدة المصدر)
+        const startX = sourceNode.position.x + sourceWidth / 2;
+        const startY = sourceNode.position.y + sourceHeight;
+        
+        // نقطة النهاية (مركز أعلى العقدة الهدف)
+        const endX = targetNode.position.x + targetWidth / 2;
+        const endY = targetNode.position.y;
+        
+        // إنشاء مسار للحافة
+        const edgePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        
+        // إنشاء مسار على شكل L بدلاً من المنحنى (مسار أفقي ثم رأسي)
+        // حساب نقطة الوسط للمسار
+        const middleY = startY + (endY - startY) / 2;
+        
+        // بناء المسار باستخدام خطوط مستقيمة (أفقية ورأسية)
+        let path = `M${startX},${startY}`; // نقطة البداية
+        
+        // مقدار الانحراف الجانبي للمسارات المائلة
+        const sideOffset = 50;
+        let labelX, labelY; // موقع النص على المسار
+        
+        // التحقق من اتجاه الروابط (من الأعلى للأسفل أم العكس)
+        if (startY < endY) {
+            // من أعلى إلى أسفل (المسار الطبيعي)
+            path += ` L${startX},${middleY}`; // خط رأسي لأسفل للنصف
+            path += ` L${endX},${middleY}`;   // خط أفقي
+            path += ` L${endX},${endY}`;      // خط رأسي للنهاية
             
-        case 'panel':
-            tableContent += `
-                <tr><td>النوع</td><td>${typeNames[nodeData.panel_type] || nodeData.panel_type}</td></tr>
-                <tr><td>الجهد</td><td>${nodeData.voltage}</td></tr>
-                <tr><td>الأمبير</td><td>${nodeData.ampacity || '-'} أمبير</td></tr>
-                <tr><td>الموقع</td><td>${nodeData.location || '-'}</td></tr>
-                <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
-                <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
-                <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
-            `;
-            break;
+            // تحديد موقع النص للمسار العادي
+            labelX = (startX + endX) / 2;
+            labelY = middleY - 10;
+        } else {
+            // من أسفل إلى أعلى (عكس المسار الطبيعي)
+            // إذا الهدف أعلى من المصدر، نحتاج إلى مسار مختلف
+            const direction = startX < endX ? 1 : -1; // تحديد اتجاه الانحراف
             
-        case 'circuitBreaker':
-            tableContent += `
-                <tr><td>النوع</td><td>${nodeData.breaker_type || '-'}</td></tr>
-                <tr><td>الأمبير المقنن</td><td>${nodeData.rated_current || '-'} أمبير</td></tr>
-                <tr><td>عدد الأقطاب</td><td>${nodeData.number_of_poles || '-'}</td></tr>
-                <tr><td>الدور</td><td>${typeNames[nodeData.role] || nodeData.role || '-'}</td></tr>
-                <tr><td>مادة الكابل</td><td>${typeNames[nodeData.cable_material] || nodeData.cable_material || '-'}</td></tr>
-                <tr><td>مقطع الكابل</td><td>${nodeData.cable_cross_section || '-'} mm²</td></tr>
-                <tr><td>طول الكابل</td><td>${nodeData.cable_length || '-'} متر</td></tr>
-            `;
-            break;
+            path += ` L${startX},${startY + sideOffset}`; // خط رأسي قصير
+            path += ` L${startX + sideOffset * direction},${startY + sideOffset}`; // خط أفقي قصير
+            path += ` L${startX + sideOffset * direction},${endY - sideOffset}`; // خط رأسي طويل
+            path += ` L${endX},${endY - sideOffset}`; // خط أفقي إلى الهدف
+            path += ` L${endX},${endY}`; // خط رأسي للنهاية
             
-        case 'load':
-            tableContent += `
-                <tr><td>نوع الحمل</td><td>${nodeData.load_type || '-'}</td></tr>
-                <tr><td>الأمبير</td><td>${nodeData.ampacity || '-'} أمبير</td></tr>
-                <tr><td>معامل القدرة</td><td>${nodeData.power_factor || '-'}</td></tr>
-                <tr><td>ساعات الاستخدام</td><td>${nodeData.estimated_usage_hours || '-'} ساعة/يوم</td></tr>
-                <tr><td>الوصف</td><td>${nodeData.description || '-'}</td></tr>
-            `;
-            break;
-    }
-    
-    tableContent += '</table>';
-    
-    // إضافة جدول المسار إذا كان هناك مسار نشط
-    if (activePaths.length > 0) {
-        tableContent += generatePathTable();
-    }
-    
-    // إضافة زر للانتقال إلى صفحة تفاصيل العنصر
-    const entityUrlPath = nodeType === 'powerSource' ? 'power-sources' : 
-                         nodeType === 'panel' ? 'panels' : 
-                         nodeType === 'circuitBreaker' ? 'breakers' : 'loads';
-    
-    const entityId = nodeData.id;
-    
-    tableContent += `
-        <div class="mt-3">
-            <a href="/static/${entityUrlPath}.html#${entityId}" class="btn btn-sm btn-primary">
-                <i class="fas fa-edit"></i> تحرير
-            </a>
-            <button class="btn btn-sm btn-info ms-2" onclick="showConnections('${node.id}')">
-                <i class="fas fa-project-diagram"></i> إظهار الاتصالات
-            </button>
-        </div>
-    `;
-    
-    detailsContent.innerHTML = tableContent;
-}
-
-/**
- * تمييز العقدة المحددة
- * @param {string} nodeId - معرف العقدة
- */
-function highlightNode(nodeId) {
-    // إزالة التمييز من جميع العقد
-    document.querySelectorAll('.node rect').forEach(rect => {
-        rect.setAttribute('stroke-width', '1');
-    });
-    
-    // تمييز العقدة المحددة
-    const selectedNode = document.querySelector(`#${nodeId} rect`);
-    if (selectedNode) {
-        selectedNode.setAttribute('stroke-width', '3');
-    }
-}
-
-/**
- * إظهار اتصالات العقدة المحددة
- * @param {string} nodeId - معرف العقدة
- */
-function showConnections(nodeId) {
-    // تحديد الحواف المتصلة بالعقدة
-    const connectedEdges = networkData.edges.filter(edge => 
-        edge.source === nodeId || edge.target === nodeId
-    ).map(edge => edge.id);
-    
-    // إعادة ضبط جميع الحواف
-    document.querySelectorAll('.edges path').forEach(path => {
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('opacity', '0.3');
-    });
-    
-    // تمييز الحواف المتصلة
-    connectedEdges.forEach(edgeId => {
-        const edgeElement = document.getElementById(edgeId);
-        if (edgeElement) {
-            edgeElement.setAttribute('stroke-width', '4');
-            edgeElement.setAttribute('opacity', '1');
+            // تحديد موقع النص للمسار المعكوس
+            labelX = (startX + sideOffset * direction + endX) / 2;
+            labelY = endY - sideOffset - 10;
+        }
+        
+        // تعيين سمات المسار
+        edgePath.setAttribute('id', `edge-${edge.id}`);
+        edgePath.setAttribute('d', path);
+        edgePath.setAttribute('stroke', edge.style?.stroke || '#6c757d');
+        edgePath.setAttribute('stroke-width', '2');
+        edgePath.setAttribute('fill', 'none');
+        
+        // إضافة تأثير متقطع حسب نوع الحافة
+        if (edge.style?.strokeDasharray) {
+            edgePath.setAttribute('stroke-dasharray', edge.style.strokeDasharray);
+        }
+        
+        // تأثير حركي (متحرك) إذا كان مطلوبًا
+        if (edge.animated) {
+            const animateElement = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+            animateElement.setAttribute('attributeName', 'stroke-dashoffset');
+            animateElement.setAttribute('from', '0');
+            animateElement.setAttribute('to', '20');
+            animateElement.setAttribute('dur', '1s');
+            animateElement.setAttribute('repeatCount', 'indefinite');
+            edgePath.appendChild(animateElement);
+            
+            // إضافة نمط متقطع للخط المتحرك
+            edgePath.setAttribute('stroke-dasharray', '5,2');
+        }
+        
+        // إضافة نص للحافة إذا وجد
+        if (edge.label) {
+            const edgeLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            
+            edgeLabel.setAttribute('x', labelX);
+            edgeLabel.setAttribute('y', labelY);
+            edgeLabel.setAttribute('text-anchor', 'middle');
+            edgeLabel.setAttribute('fill', '#495057');
+            edgeLabel.setAttribute('font-size', '12px');
+            edgeLabel.setAttribute('font-family', 'Arial, sans-serif');
+            edgeLabel.textContent = edge.label;
+            
+            // خلفية بيضاء خلف النص
+            const textBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const textWidth = edge.label.length * 7; // تقريبي
+            textBg.setAttribute('x', labelX - textWidth / 2 - 3);
+            textBg.setAttribute('y', labelY - 12);
+            textBg.setAttribute('width', textWidth + 6);
+            textBg.setAttribute('height', 16);
+            textBg.setAttribute('fill', 'white');
+            textBg.setAttribute('fill-opacity', '0.8');
+            
+            // إضافة الخلفية أولاً ثم النص
+            edgesGroup.appendChild(textBg);
+            edgesGroup.appendChild(edgeLabel);
+        }
+        
+        // إضافة الحافة إلى المجموعة
+        edgesGroup.appendChild(edgePath);
+        
+        // حفظ الحواف المباشرة من اللوحات إلى الأحمال في مصفوفة خاصة
+        if (edge.source.startsWith('panel-') && edge.target.startsWith('load-')) {
+            directPanelToLoadEdges.push(edge.id);
         }
     });
-    
-    // إعادة الحواف إلى الحالة الطبيعية بعد ثوان
-    setTimeout(() => {
-        document.querySelectorAll('.edges path').forEach(path => {
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('opacity', '1');
-        });
-    }, 3000);
 }
 
 /**
- * تطبيق فلاتر العرض على المخطط
- * @param {SVGElement} nodesGroup - مجموعة العقد
- * @param {SVGElement} edgesGroup - مجموعة الحواف
+ * إنشاء روابط مباشرة بين اللوحات والأحمال (للاستخدام عندما تكون القواطع مخفية)
  */
-function applyFilters(nodesGroup, edgesGroup) {
+function createDirectPanelToLoadConnections() {
+    // مسح الروابط المباشرة السابقة
+    directPanelToLoadEdges = [];
+    
+    // البحث عن الأحمال والقواطع والتي لوحاتها
+    networkData.nodes.filter(node => node.data.entityType === 'load').forEach(loadNode => {
+        const loadId = loadNode.id.replace('load-', '');
+        
+        // البحث عن القاطع المتصل بالحمل
+        const breakerEdge = networkData.edges.find(edge => 
+            edge.target === `load-${loadId}` && edge.source.startsWith('breaker-')
+        );
+        
+        if (breakerEdge) {
+            const breakerId = breakerEdge.source.replace('breaker-', '');
+            
+            // البحث عن اللوحة المتصلة بالقاطع
+            const panelEdge = networkData.edges.find(edge => 
+                edge.target === `breaker-${breakerId}` && edge.source.startsWith('panel-')
+            );
+            
+            if (panelEdge) {
+                const panelId = panelEdge.source.replace('panel-', '');
+                
+                // إنشاء رابط مباشر بين اللوحة والحمل
+                const directEdgeId = `direct-panel${panelId}-load${loadId}`;
+                
+                // إضافة الحافة إلى بيانات الشبكة للاستخدام في وضع إخفاء القواطع
+                networkData.edges.push({
+                    id: directEdgeId,
+                    source: `panel-${panelId}`,
+                    target: `load-${loadId}`,
+                    direct: true,
+                    style: { 
+                        stroke: typeColors.load,
+                        strokeDasharray: '3,3'
+                    }
+                });
+            }
+        }
+    });
+}
+
+// ------------------- التفاعل والتحديثات -------------------
+
+/**
+ * تحديث حالة التحويل (التكبير والتنقل)
+ */
+function updateTransform() {
+    const transformValue = `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`;
+    nodesGroup.style.transform = transformValue;
+    edgesGroup.style.transform = transformValue;
+}
+
+/**
+ * ملاءمة المخطط للعرض
+ */
+function fitNetworkToView() {
+    if (!networkData.nodes.length) return;
+    
+    // حساب الحدود الكلية للمخطط
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    
+    networkData.nodes.forEach(node => {
+        const width = node.style?.width || 150;
+        const height = 40;
+        
+        minX = Math.min(minX, node.position.x);
+        minY = Math.min(minY, node.position.y);
+        maxX = Math.max(maxX, node.position.x + width);
+        maxY = Math.max(maxY, node.position.y + height);
+    });
+    
+    // إضافة هامش
+    const marginX = 50;
+    const marginY = 50;
+    minX -= marginX;
+    minY -= marginY;
+    maxX += marginX;
+    maxY += marginY;
+    
+    const graphWidth = maxX - minX;
+    const graphHeight = maxY - minY;
+    
+    const containerRect = networkContainer.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    
+    // حساب مستوى التكبير المناسب
+    const scaleX = containerWidth / graphWidth;
+    const scaleY = containerHeight / graphHeight;
+    zoomLevel = Math.min(scaleX, scaleY);
+    
+    // حساب الإزاحة للتوسيط
+    panOffset.x = containerWidth / 2 - ((minX + maxX) / 2) * zoomLevel;
+    panOffset.y = containerHeight / 2 - ((minY + maxY) / 2) * zoomLevel;
+    
+    updateTransform();
+}
+
+/**
+ * إعادة ضبط العرض إلى الحالة الافتراضية
+ */
+function resetView() {
+    zoomLevel = 1;
+    panOffset = { x: 0, y: 0 };
+    updateTransform();
+    fitNetworkToView();
+}
+
+/**
+ * تطبيق الفلاتر الحالية
+ */
+function applyCurrentFilters() {
+    // قراءة حالة جميع الفلاتر
     const showPowerSources = document.getElementById('showPowerSources').checked;
     const showPanels = document.getElementById('showPanels').checked;
     const showBreakers = document.getElementById('showBreakers').checked;
     const showLoads = document.getElementById('showLoads').checked;
     
-    // تطبيق الفلاتر على العقد
-    networkData.nodes.forEach(node => {
-        const nodeElement = document.getElementById(node.id);
-        if (!nodeElement) return;
-        
-        if (node.data.entityType === 'powerSource' && !showPowerSources) {
-            nodeElement.style.display = 'none';
-        } else if (node.data.entityType === 'panel' && !showPanels) {
-            nodeElement.style.display = 'none';
-        } else if (node.data.entityType === 'circuitBreaker') {
-            // إخفاء القواطع افتراضياً (ستظهر فقط عند النقر على اللوحة)
-            if (!showBreakers || !isPanelExpanded(getParentPanelId(node.id))) {
-                nodeElement.style.display = 'none';
-            } else {
-                nodeElement.style.display = 'block';
-            }
-        } else if (node.data.entityType === 'load') {
-            // عرض الأحمال افتراضياً
-            if (!showLoads) {
-                nodeElement.style.display = 'none';
-            } else {
-                nodeElement.style.display = 'block';
-            }
-        } else {
-            nodeElement.style.display = 'block';
-        }
+    // تطبيق الفلاتر
+    toggleNodeTypeVisibility('powerSource', showPowerSources);
+    toggleNodeTypeVisibility('panel', showPanels);
+    toggleNodeTypeVisibility('circuitBreaker', showBreakers);
+    toggleNodeTypeVisibility('load', showLoads);
+}
+
+/**
+ * تبديل رؤية نوع معين من العقد
+ * @param {string} nodeType - نوع العقدة
+ * @param {boolean} isVisible - حالة الرؤية
+ */
+function toggleNodeTypeVisibility(nodeType, isVisible) {
+    // تحديث رؤية العقد
+    const nodeElements = document.querySelectorAll(`.${nodeType}-node`);
+    nodeElements.forEach(node => {
+        node.style.display = isVisible ? 'block' : 'none';
     });
     
-    // تحديث الروابط المباشرة بين اللوحات والأحمال
-    updateDirectPanelToLoadConnections();
-    
-    // تحديد العقد المرئية
-    const visibleNodeIds = networkData.nodes
-        .filter(node => {
-            if (node.data.entityType === 'powerSource' && !showPowerSources) return false;
-            if (node.data.entityType === 'panel' && !showPanels) return false;
-            if (node.data.entityType === 'circuitBreaker' && (!showBreakers || !isPanelExpanded(getParentPanelId(node.id)))) return false;
-            if (node.data.entityType === 'load' && !showLoads) return false;
-            return true;
-        })
-        .map(node => node.id);
-    
-    // تطبيق الفلاتر على الحواف
+    // تحديث الحواف المرتبطة
     networkData.edges.forEach(edge => {
-        const edgeElement = document.getElementById(edge.id);
+        const edgeElement = document.getElementById(`edge-${edge.id}`);
         if (!edgeElement) return;
         
-        // عرض الحواف الأصلية فقط إذا كانت نقاط البداية والنهاية مرئية
-        if (visibleNodeIds.includes(edge.source) && visibleNodeIds.includes(edge.target)) {
-            edgeElement.style.display = 'block';
-        } else {
-            edgeElement.style.display = 'none';
-        }
+        const sourceType = getNodeTypeFromId(edge.source);
+        const targetType = getNodeTypeFromId(edge.target);
+        
+        const sourceVisible = getTypeVisibility(sourceType);
+        const targetVisible = getTypeVisibility(targetType);
+        
+        // إظهار الحافة فقط إذا كان كلا الطرفين مرئيين
+        edgeElement.style.display = (sourceVisible && targetVisible) ? 'block' : 'none';
     });
     
-    // عرض الروابط المباشرة بين اللوحات والأحمال
-    document.querySelectorAll('.direct-panel-load-edge').forEach(edge => {
-        const [panelId, loadId] = edge.id.split('-to-');
-        const panelVisible = visibleNodeIds.includes(panelId);
-        const loadVisible = visibleNodeIds.includes(loadId);
-        const panelExpanded = isPanelExpanded(panelId);
-        
-        // إذا كانت اللوحة موسعة، نخفي الرابط المباشر ونظهر القواطع والروابط العادية
-        if (panelVisible && loadVisible && !panelExpanded) {
-            edge.style.display = 'block';
-        } else {
-            edge.style.display = 'none';
-        }
-    });
+    // حالة خاصة للقواطع: إذا كانت القواطع مخفية، أظهر الروابط المباشرة بين اللوحات والأحمال
+    if (nodeType === 'circuitBreaker') {
+        updateDirectConnectionsVisibility(!isVisible);
+    }
 }
 
 /**
- * تحديث الروابط المباشرة بين اللوحات والأحمال
- * إنشاء روابط افتراضية مباشرة من اللوحات إلى الأحمال لعرضها عندما تكون القواطع مخفية
+ * تحديث ظهور الروابط المباشرة بين اللوحات والأحمال
+ * @param {boolean} showDirectConnections - ما إذا كان يجب إظهار الروابط المباشرة
  */
-function updateDirectPanelToLoadConnections() {
-    // إزالة جميع الروابط المباشرة السابقة
-    document.querySelectorAll('.direct-panel-load-edge').forEach(edge => {
-        edge.remove();
-    });
-    
-    // مجموعة الروابط المباشرة من اللوحات إلى الأحمال
-    const directConnections = [];
-    
-    // البحث عن جميع الأحمال وإنشاء روابط مباشرة إلى اللوحة الأم
-    networkData.nodes.forEach(node => {
-        if (node.data.entityType === 'load') {
-            // البحث عن القاطع المرتبط بالحمل
-            const breakerEdge = networkData.edges.find(edge => 
-                edge.target === node.id && edge.source.startsWith('breaker-')
-            );
-            
-            if (breakerEdge) {
-                const breakerId = breakerEdge.source;
-                
-                // البحث عن اللوحة المرتبطة بهذا القاطع
-                const panelEdge = networkData.edges.find(edge => 
-                    edge.target === breakerId && edge.source.startsWith('panel-')
-                );
-                
-                if (panelEdge) {
-                    const panelId = panelEdge.source;
-                    
-                    // إنشاء رابط مباشر
-                    directConnections.push({
-                        panelId: panelId,
-                        loadId: node.id,
-                        loadName: node.data.label
-                    });
-                }
+function updateDirectConnectionsVisibility(showDirectConnections) {
+    networkData.edges.forEach(edge => {
+        if (edge.direct) {
+            const edgeElement = document.getElementById(`edge-${edge.id}`);
+            if (edgeElement) {
+                edgeElement.style.display = showDirectConnections ? 'block' : 'none';
             }
         }
     });
-    
-    // إضافة الروابط المباشرة إلى المخطط
-    const edgesGroup = document.querySelector('.edges');
-    if (!edgesGroup) return;
-    
-    directConnections.forEach(conn => {
-        const panelNode = networkData.nodes.find(n => n.id === conn.panelId);
-        const loadNode = networkData.nodes.find(n => n.id === conn.loadId);
-        
-        if (panelNode && loadNode) {
-            // حساب الإحداثيات
-            const sourceX = panelNode.position.x + 75; // وسط العقدة
-            const sourceY = panelNode.position.y + 20;
-            const targetX = loadNode.position.x + 75;
-            const targetY = loadNode.position.y + 20;
-            
-            // إنشاء مسار بيزير
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('id', `${conn.panelId}-to-${conn.loadId}`);
-            path.setAttribute('class', 'direct-panel-load-edge');
-            path.setAttribute('stroke', typeColors.load);
-            path.setAttribute('stroke-width', '1.5');
-            path.setAttribute('stroke-dasharray', '5,3');
-            path.setAttribute('fill', 'none');
-            
-            // حساب منحنى المسار
-            const dx = Math.abs(targetX - sourceX) * 0.3;
-            const pathData = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
-            path.setAttribute('d', pathData);
-            
-            // إضافة المسار
-            edgesGroup.appendChild(path);
-            
-            // إضافة اسم الحمل كتلميح
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('class', 'direct-panel-load-edge');
-            text.setAttribute('x', (sourceX + targetX) / 2);
-            text.setAttribute('y', (sourceY + targetY) / 2 - 5);
-            text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '10');
-            text.setAttribute('fill', typeColors.load);
-            text.textContent = conn.loadName;
-            
-            edgesGroup.appendChild(text);
+}
+
+/**
+ * الحصول على حالة رؤية نوع العقدة
+ * @param {string} nodeType - نوع العقدة
+ * @returns {boolean} - حالة الرؤية
+ */
+function getTypeVisibility(nodeType) {
+    switch (nodeType) {
+        case 'powerSource':
+            return document.getElementById('showPowerSources').checked;
+        case 'panel':
+            return document.getElementById('showPanels').checked;
+        case 'circuitBreaker':
+            return document.getElementById('showBreakers').checked;
+        case 'load':
+            return document.getElementById('showLoads').checked;
+        default:
+            return true;
+    }
+}
+
+/**
+ * تحديد عقدة في المخطط
+ * @param {Object} node - بيانات العقدة المحددة
+ */
+function selectNode(node) {
+    // إلغاء التحديد السابق إن وجد
+    if (selectedNode) {
+        const prevSelectedElement = document.getElementById(`node-${selectedNode.id}`);
+        if (prevSelectedElement) {
+            const rect = prevSelectedElement.querySelector('rect');
+            if (rect) {
+                rect.setAttribute('stroke-width', '1');
+                rect.setAttribute('stroke', selectedNode.style?.border?.split(' ')[2] || '#222138');
+            }
         }
-    });
-}
-
-/**
- * التحقق مما إذا كانت اللوحة موسعة (تم النقر عليها)
- * @param {string} panelId - معرف اللوحة
- * @returns {boolean} ما إذا كانت اللوحة موسعة
- */
-function isPanelExpanded(panelId) {
-    return activeElements.has(panelId);
-}
-
-/**
- * الحصول على معرف اللوحة الأم للقاطع
- * @param {string} breakerId - معرف القاطع
- * @returns {string} معرف اللوحة الأم أو null إذا لم تكن موجودة
- */
-function getParentPanelId(breakerId) {
-    // البحث عن الحافة الواصلة للقاطع
-    const parentEdge = networkData.edges.find(edge => 
-        edge.target === breakerId && edge.source.startsWith('panel-')
-    );
-    
-    return parentEdge ? parentEdge.source : null;
-}
-
-/**
- * تصدير المخطط كصورة
- */
-function exportAsImage() {
-    if (typeof html2canvas === 'undefined') {
-        alert('لم يتم تحميل مكتبة html2canvas');
-        return;
     }
     
-    const container = document.getElementById('networkContainer');
+    // تحديث العقدة المحددة
+    selectedNode = node;
     
-    html2canvas(container).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        
-        const link = document.createElement('a');
-        link.download = 'network-diagram.png';
-        link.href = imgData;
-        link.click();
-    }).catch(error => {
-        console.error('خطأ في تصدير الصورة:', error);
-        alert('حدث خطأ أثناء تصدير الصورة');
-    });
+    // تحديث مظهر العقدة المحددة
+    const selectedElement = document.getElementById(`node-${node.id}`);
+    const rect = selectedElement.querySelector('rect');
+    if (rect) {
+        rect.setAttribute('stroke-width', '3');
+        rect.setAttribute('stroke', '#ff8c00'); // لون برتقالي للتحديد
+    }
+    
+    // عرض تفاصيل العنصر المحدد
+    displayNodeDetails(node);
+    
+    // إضاءة المسارات المرتبطة
+    highlightConnections(node.id);
 }
 
 /**
- * إظهار القواطع المرتبطة باللوحة عند النقر عليها
- * @param {string} panelId - معرف اللوحة
+ * عرض تفاصيل العقدة المحددة في لوحة التفاصيل
+ * @param {Object} node - بيانات العقدة المحددة
  */
-function showRelatedBreakers(panelId) {
-    // البحث عن جميع القواطع المتصلة باللوحة المحددة
-    const relatedEdges = networkData.edges.filter(edge => 
-        edge.source === panelId && edge.target.startsWith('breaker-')
-    );
+function displayNodeDetails(node) {
+    const detailsTitle = document.getElementById('detailsTitle');
+    const detailsContent = document.getElementById('detailsContent');
     
-    // إظهار القواطع المرتبطة
-    relatedEdges.forEach(edge => {
-        const breakerId = edge.target;
-        const breakerElement = document.getElementById(breakerId);
-        
-        if (breakerElement) {
-            breakerElement.style.display = 'block';
+    // تحديث عنوان التفاصيل
+    detailsTitle.textContent = node.data.label;
+    
+    // إنشاء محتوى التفاصيل
+    let content = '';
+    
+    // تحديد نوع العنصر للعرض بالعربية
+    const entityTypeDisplay = typeNames[node.data.entityType] || node.data.entityType;
+    
+    // بداية الجدول
+    content = `
+        <table class="table table-sm node-details-table">
+            <tbody>
+                <tr>
+                    <td>نوع العنصر</td>
+                    <td>${entityTypeDisplay}</td>
+                </tr>
+    `;
+    
+    // إضافة تفاصيل مخصصة حسب نوع العنصر
+    const data = node.data.sourceData;
+    
+    switch (node.data.entityType) {
+        case 'powerSource':
+            content += `
+                <tr>
+                    <td>الجهد</td>
+                    <td>${data.voltage || '-'} فولت</td>
+                </tr>
+                <tr>
+                    <td>القدرة الكلية</td>
+                    <td>${data.capacity || '-'} أمبير</td>
+                </tr>
+                <tr>
+                    <td>نوع الإمداد</td>
+                    <td>${data.supply_type ? (typeNames[data.supply_type] || data.supply_type) : '-'}</td>
+                </tr>
+                <tr>
+                    <td>الموقع</td>
+                    <td>${data.location || '-'}</td>
+                </tr>
+            `;
+            break;
             
-            // إظهار الحافة من اللوحة إلى القاطع
-            const edgeElement = document.getElementById(edge.id);
-            if (edgeElement) {
-                edgeElement.style.display = 'block';
+        case 'panel':
+            content += `
+                <tr>
+                    <td>نوع اللوحة</td>
+                    <td>${data.panel_type ? (typeNames[data.panel_type] || data.panel_type) : '-'}</td>
+                </tr>
+                <tr>
+                    <td>الجهد</td>
+                    <td>${data.voltage || '-'} فولت</td>
+                </tr>
+                <tr>
+                    <td>التيار المقنن</td>
+                    <td>${data.current_rating || '-'} أمبير</td>
+                </tr>
+                <tr>
+                    <td>الموقع</td>
+                    <td>${data.location || '-'}</td>
+                </tr>
+                <tr>
+                    <td>عدد القواطع</td>
+                    <td id="breakerCount">جاري الحساب...</td>
+                </tr>
+            `;
+            // حساب عدد القواطع في الخلفية
+            countBreakersForPanel(node.id.replace('panel-', ''));
+            break;
+            
+        case 'circuitBreaker':
+            content += `
+                <tr>
+                    <td>التيار المقنن</td>
+                    <td>${data.current_rating || '-'} أمبير</td>
+                </tr>
+                <tr>
+                    <td>عدد الأقطاب</td>
+                    <td>${data.poles || '-'}</td>
+                </tr>
+                <tr>
+                    <td>النوع</td>
+                    <td>${data.breaker_type ? (typeNames[data.breaker_type] || data.breaker_type) : '-'}</td>
+                </tr>
+                <tr>
+                    <td>اسم الحمل</td>
+                    <td id="loadName">جاري التحميل...</td>
+                </tr>
+            `;
+            // تحميل اسم الحمل المتصل في الخلفية
+            loadConnectedLoadName(node.id.replace('breaker-', ''));
+            break;
+            
+        case 'load':
+            content += `
+                <tr>
+                    <td>القدرة</td>
+                    <td>${data.power || '-'} واط</td>
+                </tr>
+                <tr>
+                    <td>التيار</td>
+                    <td>${data.current || '-'} أمبير</td>
+                </tr>
+                <tr>
+                    <td>الجهد</td>
+                    <td>${data.voltage || '-'} فولت</td>
+                </tr>
+                <tr>
+                    <td>معامل القدرة</td>
+                    <td>${data.power_factor || '-'}</td>
+                </tr>
+                <tr>
+                    <td>نوع الكابل</td>
+                    <td>${data.cable_material ? (typeNames[data.cable_material] || data.cable_material) : '-'}</td>
+                </tr>
+                <tr>
+                    <td>مقطع الكابل</td>
+                    <td>${data.cable_cross_section || '-'} مم²</td>
+                </tr>
+            `;
+            break;
+    }
+    
+    // إضافة ملاحظات إذا وجدت
+    if (data.notes) {
+        content += `
+            <tr>
+                <td>ملاحظات</td>
+                <td>${data.notes}</td>
+            </tr>
+        `;
+    }
+    
+    // إغلاق الجدول
+    content += `
+            </tbody>
+        </table>
+    `;
+    
+    // إضافة أزرار الإجراءات حسب نوع العنصر
+    content += `
+        <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-sm btn-outline-primary" onclick="showElementPath('${node.id}')">
+                <i class="fas fa-route"></i> عرض المسار
+            </button>
+    `;
+    
+    if (node.data.entityType === 'panel') {
+        content += `
+            <button class="btn btn-sm btn-outline-info ms-2" onclick="showPanelBreakers('${node.id.replace('panel-', '')}')">
+                <i class="fas fa-list"></i> عرض القواطع
+            </button>
+        `;
+    }
+    
+    content += `</div>`;
+    
+    // تحديث محتوى لوحة التفاصيل
+    detailsContent.innerHTML = content;
+}
+
+/**
+ * حساب عدد القواطع المرتبطة باللوحة
+ * @param {string} panelId - معرّف اللوحة
+ */
+async function countBreakersForPanel(panelId) {
+    try {
+        const response = await NetworkAPI.getCircuitBreakers();
+        if (response.success) {
+            const breakers = response.data;
+            const panelBreakers = breakers.filter(breaker => breaker.panel == panelId);
+            const breakerCount = document.getElementById('breakerCount');
+            if (breakerCount) {
+                breakerCount.textContent = panelBreakers.length.toString();
             }
-            
-            // إضافة تأثير مرئي للإشارة إلى أن اللوحة منبثقة
-            const rect = breakerElement.querySelector('rect');
-            if (rect) {
-                // حفظ اللون الأصلي
-                rect.dataset.originalFill = rect.getAttribute('fill');
-                // تغيير لون الخلفية مؤقتاً
-                rect.setAttribute('fill', '#ffc107');
-                // إضافة تأثير وميض
-                animateBreakerAppearance(rect);
-            }
-            
-            // إظهار الروابط من القاطع إلى الأحمال المرتبطة به
-            const breakerToLoadEdges = networkData.edges.filter(e => 
-                e.source === breakerId && e.target.startsWith('load-')
-            );
-            
-            breakerToLoadEdges.forEach(loadEdge => {
-                const loadEdgeElement = document.getElementById(loadEdge.id);
-                if (loadEdgeElement) {
-                    loadEdgeElement.style.display = 'block';
-                }
-                
-                // نحتفظ بالأحمال ظاهرة ولكن نخفي الروابط المباشرة من اللوحة إلى الأحمال
-                const loadId = loadEdge.target;
-                const directEdge = document.getElementById(`${panelId}-to-${loadId}`);
-                if (directEdge) {
-                    directEdge.style.display = 'none';
-                }
-                
-                // ونخفي أيضاً نص التلميح المرتبط بالرابط المباشر
-                document.querySelectorAll(`.direct-panel-load-edge[id="${panelId}-to-${loadId}-text"]`).forEach(text => {
-                    text.style.display = 'none';
-                });
-            });
         }
-    });
-    
-    applyFilters(
-        document.querySelector('.nodes'), 
-        document.querySelector('.edges')
-    );
+    } catch (error) {
+        console.error('خطأ في حساب عدد القواطع:', error);
+    }
 }
 
 /**
- * إظهار الأحمال المرتبطة بالقاطع عند النقر عليه
- * @param {string} breakerId - معرف القاطع
+ * تحميل اسم الحمل المتصل بالقاطع
+ * @param {string} breakerId - معرّف القاطع
  */
-function showRelatedLoads(breakerId) {
-    // البحث عن جميع الأحمال المتصلة بالقاطع المحدد
-    const relatedEdges = networkData.edges.filter(edge => 
-        edge.source === breakerId && edge.target.startsWith('load-')
-    );
-    
-    // إظهار الأحمال المرتبطة
-    relatedEdges.forEach(edge => {
-        const loadId = edge.target;
-        const loadElement = document.getElementById(loadId);
-        
-        if (loadElement) {
-            loadElement.style.display = 'block';
-            
-            // إضافة تأثير مرئي
-            const rect = loadElement.querySelector('rect');
-            if (rect) {
-                rect.dataset.originalFill = rect.getAttribute('fill');
-                rect.setAttribute('fill', '#0d6efd');
-                animateLoadAppearance(rect);
+async function loadConnectedLoadName(breakerId) {
+    try {
+        const response = await NetworkAPI.getLoads();
+        if (response.success) {
+            const loads = response.data;
+            const load = loads.find(l => l.breaker == breakerId);
+            const loadName = document.getElementById('loadName');
+            if (loadName) {
+                loadName.textContent = load ? load.name : 'لا يوجد حمل متصل';
             }
         }
-    });
-    
-    applyFilters(
-        document.querySelector('.nodes'), 
-        document.querySelector('.edges')
-    );
+    } catch (error) {
+        console.error('خطأ في تحميل اسم الحمل:', error);
+    }
 }
 
 /**
- * إخفاء القواطع المرتبطة باللوحة عند إلغاء تحديدها
- * @param {string} panelId - معرف اللوحة
+ * إضاءة مسارات الاتصال المرتبطة بالعقدة المحددة
+ * @param {string} nodeId - معرّف العقدة
  */
-function hideRelatedBreakers(panelId) {
-    // البحث عن جميع القواطع المتصلة باللوحة
-    const relatedEdges = networkData.edges.filter(edge => 
-        edge.source === panelId && edge.target.startsWith('breaker-')
-    );
+function highlightConnections(nodeId) {
+    // إعادة تعيين حالة جميع الحواف
+    resetEdgesHighlighting();
     
-    // إخفاء القواطع فقط وإعادة إظهار الروابط المباشرة
-    relatedEdges.forEach(edge => {
-        const breakerId = edge.target;
-        const breakerElement = document.getElementById(breakerId);
-        
-        if (breakerElement) {
-            // استعادة اللون الأصلي للقاطع إذا كان محفوظاً
-            const rect = breakerElement.querySelector('rect');
-            if (rect && rect.dataset.originalFill) {
-                rect.setAttribute('fill', rect.dataset.originalFill);
-            }
-            
-            // إخفاء القاطع وحافته الواصلة من اللوحة
-            breakerElement.style.display = 'none';
-            
-            // إخفاء الحافة من اللوحة إلى القاطع
-            const edgeElement = document.getElementById(edge.id);
-            if (edgeElement) {
-                edgeElement.style.display = 'none';
-            }
-            
-            // البحث عن الأحمال المرتبطة بهذا القاطع
-            const breakerToLoadEdges = networkData.edges.filter(loadEdge => 
-                loadEdge.source === breakerId && loadEdge.target.startsWith('load-')
-            );
-            
-            // إعادة ظهور الروابط المباشرة من اللوحة إلى الأحمال
-            breakerToLoadEdges.forEach(loadEdge => {
-                const loadId = loadEdge.target;
-                
-                // إظهار الروابط المباشرة
-                const directEdge = document.getElementById(`${panelId}-to-${loadId}`);
-                if (directEdge) {
-                    directEdge.style.display = 'block';
-                }
-                
-                // إظهار نص التلميح المرتبط بالرابط المباشر
-                document.querySelectorAll(`.direct-panel-load-edge[id="${panelId}-to-${loadId}-text"]`).forEach(text => {
-                    text.style.display = 'block';
-                });
-                
-                // إخفاء الروابط بين القواطع والأحمال
-                const breakerLoadEdgeElement = document.getElementById(loadEdge.id);
-                if (breakerLoadEdgeElement) {
-                    breakerLoadEdgeElement.style.display = 'none';
-                }
-            });
-            
-            // حذف القاطع من قائمة العناصر النشطة
-            activeElements.delete(breakerId);
-        }
-    });
-    
-    // إعادة تطبيق الفلاتر
-    applyFilters(
-        document.querySelector('.nodes'), 
-        document.querySelector('.edges')
-    );
-}
-
-/**
- * تحريك القاطع عند ظهوره (تأثير مرئي)
- * @param {SVGElement} element - عنصر القاطع
- */
-function animateBreakerAppearance(element) {
-    // تأثير بسيط للوميض
-    let opacity = 0.5;
-    const interval = setInterval(() => {
-        opacity += 0.1;
-        element.setAttribute('opacity', opacity);
-        
-        if (opacity >= 1) {
-            clearInterval(interval);
-            element.setAttribute('opacity', 1);
-        }
-    }, 50);
-}
-
-/**
- * تحريك الحمل عند ظهوره (تأثير مرئي)
- * @param {SVGElement} element - عنصر الحمل
- */
-function animateLoadAppearance(element) {
-    // تأثير بسيط للوميض
-    let opacity = 0.5;
-    const interval = setInterval(() => {
-        opacity += 0.1;
-        element.setAttribute('opacity', opacity);
-        
-        if (opacity >= 1) {
-            clearInterval(interval);
-            element.setAttribute('opacity', 1);
-        }
-    }, 50);
-}
-
-/**
- * إضاءة مسار التغذية للعنصر المحدد
- * @param {string} nodeId - معرف العقدة
- */
-function highlightPowerPath(nodeId) {
-    // إعادة تعيين مسارات الإضاءة السابقة
-    resetHighlightedPaths();
-    
-    // تتبع مسار التغذية من مصدر الطاقة إلى العنصر
+    // تتبع المسار التصاعدي (من العنصر إلى المصدر)
     const upstreamPath = findUpstreamPath(nodeId);
     
-    // تتبع مسار التغذية من العنصر إلى الأحمال
+    // تتبع المسار التنازلي (من العنصر إلى الأحمال)
     const downstreamPath = findDownstreamPath(nodeId);
     
-    // دمج المسارين
-    activePaths = [...upstreamPath, ...downstreamPath];
-    
-    // إضاءة المسارات
-    activePaths.forEach(pathSegment => {
-        const edgeElement = document.getElementById(pathSegment.edgeId);
+    // إضاءة المسار التصاعدي
+    upstreamPath.forEach((pathEdge, index) => {
+        const edgeElement = document.getElementById(`edge-${pathEdge}`);
         if (edgeElement) {
-            // تخزين اللون الأصلي
-            if (!edgeElement.dataset.originalStroke) {
-                edgeElement.dataset.originalStroke = edgeElement.getAttribute('stroke');
-            }
-            
-            // تغيير لون الحافة للإشارة إلى التحديد
-            if (pathSegment.type === 'upstream') {
-                edgeElement.setAttribute('stroke', '#ff6600'); // برتقالي للمسار الأعلى
-            } else {
-                edgeElement.setAttribute('stroke', '#00aaff'); // أزرق فاتح للمسار الأدنى
-            }
-            
-            // زيادة سمك الخط
-            edgeElement.setAttribute('stroke-width', '4');
+            edgeElement.setAttribute('stroke', '#ff8c00'); // برتقالي
+            edgeElement.setAttribute('stroke-width', '3');
+        }
+    });
+    
+    // إضاءة المسار التنازلي
+    downstreamPath.forEach((pathEdge, index) => {
+        const edgeElement = document.getElementById(`edge-${pathEdge}`);
+        if (edgeElement) {
+            edgeElement.setAttribute('stroke', '#0d6efd'); // أزرق
+            edgeElement.setAttribute('stroke-width', '3');
         }
     });
 }
 
 /**
- * إعادة تعيين مسارات الإضاءة
+ * إعادة تعيين حالة إضاءة جميع الحواف
  */
-function resetHighlightedPaths() {
-    // إعادة لون جميع الحواف المضاءة سابقاً
-    document.querySelectorAll('.edges path[data-original-stroke]').forEach(edge => {
-        // استعادة اللون الأصلي
-        edge.setAttribute('stroke', edge.dataset.originalStroke);
-        // إعادة تعيين السمك
-        edge.setAttribute('stroke-width', '2');
-        // إزالة البيانات المخزنة
-        delete edge.dataset.originalStroke;
+function resetEdgesHighlighting() {
+    networkData.edges.forEach(edge => {
+        const edgeElement = document.getElementById(`edge-${edge.id}`);
+        if (edgeElement) {
+            edgeElement.setAttribute('stroke', edge.style?.stroke || '#6c757d');
+            edgeElement.setAttribute('stroke-width', '2');
+        }
     });
-    
-    // مسح مصفوفة المسارات النشطة
-    activePaths = [];
 }
 
 /**
- * البحث عن المسار التصاعدي (من العنصر إلى المصدر)
- * @param {string} nodeId - معرف العقدة
- * @returns {Array} مسار التغذية التصاعدي
+ * البحث عن المسار التصاعدي من العقدة إلى مصدر الطاقة
+ * @param {string} nodeId - معرّف العقدة
+ * @returns {Array} - مصفوفة تحتوي على معرّفات الحواف في المسار
  */
 function findUpstreamPath(nodeId) {
     const path = [];
     let currentNodeId = nodeId;
-    let visited = new Set();
     
-    // منع التكرار والدورات
-    visited.add(currentNodeId);
-    
+    // البحث المتكرر حتى الوصول إلى مصدر طاقة أو عدم وجود مسار إضافي
     while (currentNodeId) {
-        // البحث عن الحافة الواصلة للعقدة الحالية
+        // البحث عن حافة تدخل إلى العقدة الحالية
         const incomingEdge = networkData.edges.find(edge => edge.target === currentNodeId);
         
-        // إذا لم يكن هناك حافة واصلة أو وصلنا لمصدر طاقة، نتوقف
-        if (!incomingEdge) break;
-        
-        // إضافة الحافة إلى المسار
-        path.push({
-            edgeId: incomingEdge.id,
-            sourceId: incomingEdge.source,
-            targetId: incomingEdge.target,
-            type: 'upstream'
-        });
-        
-        // الانتقال للعقدة التالية في المسار (الأب)
-        currentNodeId = incomingEdge.source;
-        
-        // التحقق من وجود دورة
-        if (visited.has(currentNodeId)) {
+        if (!incomingEdge) {
+            // لا توجد حافة قادمة، نهاية المسار
             break;
         }
         
-        visited.add(currentNodeId);
+        // إضافة الحافة إلى المسار
+        path.push(incomingEdge.id);
+        
+        // الانتقال إلى العقدة المصدر
+        currentNodeId = incomingEdge.source;
     }
     
     return path;
 }
 
 /**
- * البحث عن المسار التنازلي (من العنصر إلى الأحمال)
- * @param {string} nodeId - معرف العقدة
- * @returns {Array} مسار التغذية التنازلي
+ * البحث عن المسار التنازلي من العقدة إلى الأحمال
+ * @param {string} nodeId - معرّف العقدة
+ * @returns {Array} - مصفوفة تحتوي على معرّفات الحواف في المسار
  */
 function findDownstreamPath(nodeId) {
     const path = [];
-    const visited = new Set();
     
-    // دالة تكرارية لاكتشاف جميع المسارات النازلة
-    function exploreDownstream(currentId) {
-        if (visited.has(currentId)) return;
-        visited.add(currentId);
-        
-        // البحث عن جميع الحواف الخارجة من هذه العقدة
+    // وظيفة تكرارية للبحث عن المسار التنازلي
+    function traverseDownstream(currentId) {
+        // البحث عن جميع الحواف الخارجة من العقدة الحالية
         const outgoingEdges = networkData.edges.filter(edge => edge.source === currentId);
         
-        outgoingEdges.forEach(edge => {
+        for (const edge of outgoingEdges) {
             // إضافة الحافة إلى المسار
-            path.push({
-                edgeId: edge.id,
-                sourceId: edge.source,
-                targetId: edge.target,
-                type: 'downstream'
-            });
+            path.push(edge.id);
             
-            // استمرار الاستكشاف بشكل تكراري
-            exploreDownstream(edge.target);
-        });
+            // استمرار البحث بشكل متكرر
+            traverseDownstream(edge.target);
+        }
     }
     
-    exploreDownstream(nodeId);
+    // بدء البحث من العقدة المحددة
+    traverseDownstream(nodeId);
+    
     return path;
 }
 
+// ------------------- وظائف مساعدة -------------------
+
 /**
- * إنشاء جدول لعناصر المسار المحدد
- * @returns {string} HTML للجدول
+ * البحث عن عقدة بواسطة المعرّف
+ * @param {string} nodeId - معرّف العقدة
+ * @returns {Object} - بيانات العقدة
  */
-function generatePathTable() {
-    if (activePaths.length === 0) return '';
-    
-    // جمع معرفات العقد الفريدة في المسار
-    const nodeIds = new Set();
-    activePaths.forEach(pathSegment => {
-        nodeIds.add(pathSegment.sourceId);
-        nodeIds.add(pathSegment.targetId);
-    });
-    
-    // جمع بيانات العقد
-    const pathNodes = [];
-    nodeIds.forEach(nodeId => {
-        const node = networkData.nodes.find(n => n.id === nodeId);
-        if (node) {
-            pathNodes.push({
-                id: node.id,
-                name: node.data.label,
-                type: node.data.entityType,
-                data: node.data.sourceData
-            });
-        }
-    });
-    
-    // تصنيف العقد حسب النوع لتنظيم الجدول
-    const sources = pathNodes.filter(node => node.type === 'powerSource');
-    const panels = pathNodes.filter(node => node.type === 'panel');
-    const breakers = pathNodes.filter(node => node.type === 'circuitBreaker');
-    const loads = pathNodes.filter(node => node.type === 'load');
-    
-    // بناء HTML للجدول
-    let tableHtml = `
-        <h5 class="mt-4 mb-2"><i class="fas fa-route"></i> مسار التغذية</h5>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover">
-                <thead>
-                    <tr>
-                        <th>النوع</th>
-                        <th>الاسم</th>
-                        <th>التفاصيل</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-    
-    // إضافة مصادر الطاقة
-    sources.forEach(source => {
-        tableHtml += `
-            <tr>
-                <td><span class="badge bg-danger">مصدر طاقة</span></td>
-                <td>${source.name}</td>
-                <td>${source.data.voltage} فولت / ${source.data.total_ampacity || '-'} أمبير</td>
-            </tr>
-        `;
-    });
-    
-    // إضافة اللوحات
-    panels.forEach(panel => {
-        tableHtml += `
-            <tr>
-                <td><span class="badge bg-success">لوحة</span></td>
-                <td>${panel.name}</td>
-                <td>${panel.data.voltage} فولت / ${panel.data.ampacity || '-'} أمبير</td>
-            </tr>
-        `;
-    });
-    
-    // إضافة القواطع
-    breakers.forEach(breaker => {
-        tableHtml += `
-            <tr>
-                <td><span class="badge bg-warning text-dark">قاطع</span></td>
-                <td>${breaker.name}</td>
-                <td>${breaker.data.rated_current || '-'} أمبير / ${breaker.data.number_of_poles || '-'} قطب</td>
-            </tr>
-        `;
-    });
-    
-    // إضافة الأحمال
-    loads.forEach(load => {
-        tableHtml += `
-            <tr>
-                <td><span class="badge bg-primary">حمل</span></td>
-                <td>${load.name}</td>
-                <td>${load.data.ampacity || '-'} أمبير / ${load.data.power_factor || '-'} PF</td>
-            </tr>
-        `;
-    });
-    
-    tableHtml += `
-                </tbody>
-            </table>
-        </div>
-    `;
-    
-    return tableHtml;
+function findNodeById(nodeId) {
+    return networkData.nodes.find(node => node.id === nodeId);
 }
 
-// إضافة وظيفة عالمية لإظهار الاتصالات
-window.showConnections = function(nodeId) {
-    showConnections(nodeId);
+/**
+ * الحصول على نوع العقدة من معرّفها
+ * @param {string} nodeId - معرّف العقدة
+ * @returns {string} - نوع العقدة
+ */
+function getNodeTypeFromId(nodeId) {
+    if (nodeId.startsWith('ps-')) {
+        return 'powerSource';
+    } else if (nodeId.startsWith('panel-')) {
+        return 'panel';
+    } else if (nodeId.startsWith('breaker-')) {
+        return 'circuitBreaker';
+    } else if (nodeId.startsWith('load-')) {
+        return 'load';
+    } else {
+        return 'unknown';
+    }
+}
+
+/**
+ * الحصول على لون حسب نوع العقدة
+ * @param {string} nodeType - نوع العقدة
+ * @returns {string} - كود اللون
+ */
+function getTypeColor(nodeType) {
+    return typeColors[nodeType] || '#6c757d';
+}
+
+// ------------------- الوظائف العالمية المتاحة للاستدعاء من HTML -------------------
+
+/**
+ * عرض مسار العنصر المحدد
+ * @param {string} nodeId - معرّف العقدة
+ */
+window.showElementPath = function(nodeId) {
+    highlightConnections(nodeId);
+    // يمكن إضافة تأثيرات إضافية هنا مثل التمرير إلى القسم المعني
 };
+
+/**
+ * عرض القواطع الخاصة باللوحة
+ * @param {string} panelId - معرّف اللوحة
+ */
+window.showPanelBreakers = function(panelId) {
+    // إظهار القواطع المرتبطة باللوحة
+    // ...
+    console.log(`عرض قواطع اللوحة ${panelId}`);
+};
+
+/**
+ * تحميل بيانات الشبكة من واجهة برمجة التطبيقات
+ * @returns {Promise<boolean>} نجاح أو فشل العملية
+ */
+async function loadNetworkData() {
+    try {
+        // جلب جميع العناصر
+        const powerSourcesResponse = await NetworkAPI.getPowerSources();
+        const panelsResponse = await NetworkAPI.getPanels();
+        const breakersResponse = await NetworkAPI.getCircuitBreakers();
+        const loadsResponse = await NetworkAPI.getLoads();
+        
+        if (!powerSourcesResponse.success || !panelsResponse.success || 
+            !breakersResponse.success || !loadsResponse.success) {
+            throw new Error('فشل في جلب بيانات الشبكة');
+        }
+        
+        const powerSources = powerSourcesResponse.data;
+        const panels = panelsResponse.data;
+        const breakers = breakersResponse.data;
+        const loads = loadsResponse.data;
+        
+        // إعداد العقد (nodes)
+        networkData.nodes = [];
+        
+        // إضافة مصادر الطاقة
+        let xPos = 100;
+        let yPos = 100;
+        
+        powerSources.forEach((source, index) => {
+            networkData.nodes.push({
+                id: `ps-${source.id}`,
+                type: 'input',
+                data: { 
+                    label: source.name,
+                    entityType: 'powerSource',
+                    sourceData: source 
+                },
+                position: { x: xPos, y: yPos },
+                style: { 
+                    background: typeColors.powerSource, 
+                    color: 'white',
+                    border: '1px solid #222138',
+                    width: 180,
+                    borderRadius: '5px'
+                }
+            });
+            xPos += 300;
+            if ((index + 1) % 3 === 0) {
+                xPos = 100;
+                yPos += 150;
+            }
+        });
+        
+        // إضافة اللوحات
+        xPos = 150;
+        yPos += 150;
+        
+        panels.forEach((panel, index) => {
+            networkData.nodes.push({
+                id: `panel-${panel.id}`,
+                data: { 
+                    label: panel.name,
+                    entityType: 'panel',
+                    sourceData: panel 
+                },
+                position: { x: xPos, y: yPos },
+                style: { 
+                    background: typeColors.panel, 
+                    color: 'white',
+                    border: '1px solid #222138',
+                    width: 180,
+                    borderRadius: '5px'
+                }
+            });
+            xPos += 250;
+            if ((index + 1) % 4 === 0) {
+                xPos = 150;
+                yPos += 120;
+            }
+        });
+        
+        // إضافة القواطع
+        xPos = 200;
+        yPos += 150;
+        
+        breakers.forEach((breaker, index) => {
+            networkData.nodes.push({
+                id: `breaker-${breaker.id}`,
+                data: { 
+                    label: breaker.name || `قاطع ${breaker.id}`,
+                    entityType: 'circuitBreaker',
+                    sourceData: breaker 
+                },
+                position: { x: xPos, y: yPos },
+                style: { 
+                    background: typeColors.circuitBreaker, 
+                    color: '#333',
+                    border: '1px solid #222138',
+                    width: 150,
+                    borderRadius: '5px'
+                }
+            });
+            xPos += 200;
+            if ((index + 1) % 5 === 0) {
+                xPos = 200;
+                yPos += 100;
+            }
+        });
+        
+        // إضافة الأحمال
+        xPos = 250;
+        yPos += 150;
+        
+        loads.forEach((load, index) => {
+            networkData.nodes.push({
+                id: `load-${load.id}`,
+                type: 'output',
+                data: { 
+                    label: load.name,
+                    entityType: 'load',
+                    sourceData: load 
+                },
+                position: { x: xPos, y: yPos },
+                style: { 
+                    background: typeColors.load, 
+                    color: 'white',
+                    border: '1px solid #222138',
+                    width: 150,
+                    borderRadius: '5px'
+                }
+            });
+            xPos += 180;
+            if ((index + 1) % 6 === 0) {
+                xPos = 250;
+                yPos += 80;
+            }
+        });
+        
+        // إعداد الحواف (edges)
+        networkData.edges = [];
+        
+        // روابط مصادر الطاقة إلى اللوحات
+        panels.forEach(panel => {
+            if (panel.power_source) {
+                networkData.edges.push({
+                    id: `ps${panel.power_source}-panel${panel.id}`,
+                    source: `ps-${panel.power_source}`,
+                    target: `panel-${panel.id}`,
+                    animated: true,
+                    style: { stroke: typeColors.powerSource },
+                    label: 'يغذي'
+                });
+            }
+        });
+        
+        // روابط اللوحات الأم إلى اللوحات الفرعية
+        panels.forEach(panel => {
+            if (panel.parent_panel) {
+                networkData.edges.push({
+                    id: `panel${panel.parent_panel}-panel${panel.id}`,
+                    source: `panel-${panel.parent_panel}`,
+                    target: `panel-${panel.id}`,
+                    animated: true,
+                    style: { stroke: typeColors.panel },
+                    label: 'أم'
+                });
+            }
+        });
+        
+        // روابط اللوحات إلى القواطع
+        breakers.forEach(breaker => {
+            if (breaker.panel) {
+                networkData.edges.push({
+                    id: `panel${breaker.panel}-breaker${breaker.id}`,
+                    source: `panel-${breaker.panel}`,
+                    target: `breaker-${breaker.id}`,
+                    style: { stroke: typeColors.panel }
+                });
+            }
+        });
+        
+        // روابط القواطع إلى الأحمال
+        loads.forEach(load => {
+            if (load.breaker) {
+                networkData.edges.push({
+                    id: `breaker${load.breaker}-load${load.id}`,
+                    source: `breaker-${load.breaker}`,
+                    target: `load-${load.id}`,
+                    style: { stroke: typeColors.load }
+                });
+            }
+        });
+        
+        // روابط للقواطع المغذية
+        breakers.forEach(breaker => {
+            if (breaker.feeding_breakers && breaker.feeding_breakers.length > 0) {
+                breaker.feeding_breakers.forEach(feederId => {
+                    networkData.edges.push({
+                        id: `breaker${feederId}-breaker${breaker.id}`,
+                        source: `breaker-${feederId}`,
+                        target: `breaker-${breaker.id}`,
+                        animated: true,
+                        style: { stroke: typeColors.circuitBreaker, strokeDasharray: '5, 5' },
+                        label: 'يغذي'
+                    });
+                });
+            }
+        });
+        
+        console.log('تم تحميل بيانات الشبكة بنجاح:', networkData);
+        return true;
+    } catch (error) {
+        console.error('خطأ في تحميل بيانات الشبكة:', error);
+        return false;
+    }
+}
+
+// ينفذ عند تحميل المستند
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // تحميل البيانات أولاً
+        await loadNetworkData();
+        
+        // ثم تهيئة المخطط بعد تحميل البيانات بنجاح
+        initializeNetworkVisualizer();
+    } catch (error) {
+        console.error('حدث خطأ أثناء تهيئة الصفحة:', error);
+        document.getElementById('loadingIndicator').style.display = 'none';
+        alert('حدث خطأ أثناء تحميل بيانات الشبكة. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+    }
+});
