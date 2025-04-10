@@ -49,46 +49,100 @@ function initializeNetworkVisualizer() {
         console.error('لم يتم تحميل بيانات الشبكة');
         return;
     }
-    
+
     // إعداد حاوية SVG
     networkContainer = document.getElementById('networkContainer');
-    
-    // إنشاء عنصر SVG
-    svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svgElement.setAttribute('width', '100%');
-    svgElement.setAttribute('height', '100%');
-    svgElement.setAttribute('class', 'network-graph');
-    
-    // إنشاء المجموعات الرئيسية للعناصر
-    edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    edgesGroup.setAttribute('class', 'edges-group');
-    nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    nodesGroup.setAttribute('class', 'nodes-group');
-    
-    // إضافة المجموعات إلى عنصر SVG
-    svgElement.appendChild(edgesGroup);
-    svgElement.appendChild(nodesGroup);
-    
-    // إضافة عنصر SVG إلى الحاوية
-    networkContainer.appendChild(svgElement);
-    
+
+    // إنشاء عنصر SVG باستخدام D3
+    const svg = d3.select(networkContainer)
+        .append('svg')
+        .attr('width', '100%')
+        .attr('height', '100%')
+        .attr('class', 'network-graph');
+
+    const g = svg.append('g');
+
     // إعداد قابلية السحب والتكبير/التصغير
-    setupDragAndZoom();
-    
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 2])
+        .on('zoom', (event) => g.attr('transform', event.transform));
+
+    svg.call(zoom);
+
+    // تحويل البيانات إلى صيغة شجرية ملائمة
+    const rootData = convertNetworkDataToHierarchy(networkData);
+
+    const root = d3.hierarchy(rootData);
+
+    const treeLayout = d3.tree().nodeSize([150, 100]);
+    treeLayout(root);
+
+    // إنشاء الروابط (Edges)
+    g.selectAll('.link')
+        .data(root.links())
+        .enter()
+        .append('path')
+        .attr('class', 'link')
+        .attr('fill', 'none')
+        .attr('stroke', '#888')
+        .attr('stroke-width', 1.5)
+        .attr('d', d3.linkVertical()
+            .x(d => d.x)
+            .y(d => d.y));
+
+    // إنشاء العقد (Nodes)
+    const nodes = g.selectAll('.node')
+        .data(root.descendants())
+        .enter()
+        .append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+
+    nodes.append('circle')
+        .attr('r', 20)
+        .attr('fill', '#69b3a2');
+
+    nodes.append('text')
+        .attr('dy', 4)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#fff')
+        .text(d => d.data.name);
+
+    // إضافة خاصية السحب
+    nodes.call(d3.drag()
+        .on('drag', function(event, d) {
+            d.x += event.dx;
+            d.y += event.dy;
+            d3.select(this).attr('transform', `translate(${d.x},${d.y})`);
+            g.selectAll('.link').attr('d', d3.linkVertical()
+                .x(d => d.x)
+                .y(d => d.y));
+        }));
+
     // إضافة أحداث التغيير للفلاتر
     setupFilterEvents();
-    
+
     // إضافة أحداث التحكم للأزرار
-    setupControlButtons();
-    
+    setupControlButtons(zoom, svg);
+
     // إنشاء الروابط المباشرة للوحات والأحمال (للاستخدام عندما تكون القواطع مخفية)
     createDirectPanelToLoadConnections();
-    
-    // عرض الشبكة بشكل افتراضي
-    renderNetwork();
-    
+
     // إخفاء مؤشر التحميل
     document.getElementById('loadingIndicator').style.display = 'none';
+}
+
+// دالة مساعدة لتحويل بيانات الشبكة الحالية إلى صيغة هرمية متوافقة مع D3
+function convertNetworkDataToHierarchy(data) {
+    const nodesMap = {};
+    data.nodes.forEach(node => nodesMap[node.id] = {...node, children: []});
+    data.edges.forEach(edge => {
+        if (nodesMap[edge.source] && nodesMap[edge.target]) {
+            nodesMap[edge.source].children.push(nodesMap[edge.target]);
+        }
+    });
+    // افتراض أن هناك عقدة رئيسية واحدة
+    return nodesMap[data.nodes[0].id];
 }
 
 /**
