@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>شبكة الطاقة الكهربائية التفاعلية - عرض رأسي</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            direction: rtl;
+            background-color: #f7f9fc;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        #controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        button {
+            padding: 8px 15px;
+            margin: 0 5px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        #network {
+            width: 100%;
+            height: 700px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .node {
+            cursor: pointer;
+        }
+        
+        .node rect {
+            rx: 8;
+            ry: 8;
+            stroke-width: 2px;
+            transition: all 0.3s;
+        }
+        
+        .node:hover rect {
+            filter: brightness(105%);
+            stroke-width: 3px;
+        }
+        
+        .node text {
+            font: 14px 'Segoe UI', Tahoma, sans-serif;
+            font-weight: 500;
+            fill: #fff;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        .link {
+            fill: none;
+            stroke-width: 2px;
+            stroke-linecap: round;
+            transition: stroke 0.3s, stroke-width 0.3s;
+        }
+        
+        .link:hover {
+            stroke-width: 3px;
+        }
+        
+        .node-value {
+            font-size: 11px;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+            color: #333;
+            max-width: 300px;
+        }
+        
+        .tooltip h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        
+        .tooltip p {
+            margin: 5px 0;
+        }
+        
+        .tooltip .value {
+            font-weight: bold;
+            color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <h1>شبكة الطاقة الكهربائية التفاعلية</h1>
+    
+    <div id="controls">
+        <button id="expandAll">توسيع الكل</button>
+        <button id="collapseAll">طي الكل</button>
+        <button id="resetZoom">إعادة ضبط العرض</button>
+    </div>
+    
+    <div id="network"></div>
+    
+    <div class="tooltip"></div>
+
+    <script>
+        // بيانات الشبكة
+        const sampleData = {
+            name: "المحطة الرئيسية",
+            value: 750,
+            type: "main",
+            children: [
+                {
+                    name: "محطة التوزيع 1",
+                    value: 350,
+                    type: "substation",
+                    children: [
+                        { name: "محول 1-1", value: 150, type: "transformer" },
+                        { 
+                            name: "محول 1-2", 
+                            value: 200,
+                            type: "transformer",
+                            children: [
+                                { name: "فرع 1-2-1", value: 75, type: "branch" },
+                                { name: "فرع 1-2-2", value: 85, type: "branch" },
+                                { name: "فرع 1-2-3", value: 40, type: "branch" }
+                            ] 
+                        }
+                    ]
+                },
+                {
+                    name: "محطة التوزيع 2",
+                    value: 400,
+                    type: "substation",
+                    children: [
+                        { name: "محول 2-1", value: 180, type: "transformer" },
+                        { name: "محول 2-2", value: 220, type: "transformer" }
+                    ]
+                }
+            ]
+        };
+
+        // نظام الألوان حسب نوع العنصر
+        const colorScheme = {
+            main: {
+                fill: "#2c3e50", 
+                stroke: "#1a2530",
+                link: "#34495e"
+            },
+            substation: {
+                fill: "#3498db", 
+                stroke: "#2980b9",
+                link: "#6ab0de"
+            },
+            transformer: {
+                fill: "#27ae60", 
+                stroke: "#219955",
+                link: "#68c97a"
+            },
+            branch: {
+                fill: "#e67e22", 
+                stroke: "#d35400",
+                link: "#f39c12"
+            }
+        };
+
+        // إعدادات الرسم البياني
+        const margin = {top: 50, right: 40, bottom: 50, left: 40};
+        const width = 1200 - margin.left - margin.right;
+        const height = 700 - margin.top - margin.bottom;
+        
+        let root;
+
+        // إنشاء عنصر SVG مع دعم التكبير/التصغير
+        const svg = d3.select("#network")
+            .append("svg")
+            .attr("width", "100%")
+            .attr("height", "100%")
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`);
+            
+        // إنشاء عنصر tooltip
+        const tooltip = d3.select(".tooltip");
+            
+        // إضافة مجموعة رئيسية مع هامش
+        const g = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+        // إعداد وظيفة التكبير/التصغير
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+            
+        svg.call(zoom);
+        
+        // تهيئة التخطيط الشجري (العرض الرأسي)
+        const treeLayout = d3.tree()
+            .size([width, height])
+            .separation((a, b) => a.parent === b.parent ? 1.2 : 2);
+
+        // وظيفة التحديث عند النقر على العقدة
+        function update(source) {
+            const duration = 500;
+            
+            // تحديث تخطيط العقد
+            const treeData = treeLayout(root);
+            const nodes = treeData.descendants();
+            const links = treeData.links();
+            
+            // حساب حجم المستطيل لكل عقدة
+            nodes.forEach(d => {
+                // تعيين حجم المستطيل حسب نوع العقدة
+                if (d.data.type === "main") {
+                    d.rectWidth = 180;
+                    d.rectHeight = 60;
+                } else if (d.data.type === "substation") {
+                    d.rectWidth = 160;
+                    d.rectHeight = 50;
+                } else if (d.data.type === "transformer") {
+                    d.rectWidth = 140;
+                    d.rectHeight = 45;
+                } else {
+                    d.rectWidth = 120;
+                    d.rectHeight = 40;
+                }
+            });
+            
+            // تحديث الروابط
+            const link = g.selectAll(".link")
+                .data(links, d => d.target.id);
+
+            // إزالة الروابط القديمة
+            link.exit()
+                .transition()
+                .duration(duration)
+                .attr("d", d => {
+                    const o = {x: source.x0, y: source.y0};
+                    return verticalDiagonal(o, o);
+                })
+                .remove();
+
+            // إضافة روابط جديدة
+            const linkEnter = link.enter()
+                .append("path")
+                .attr("class", "link")
+                .attr("d", d => {
+                    const o = {x: source.x0, y: source.y0};
+                    return verticalDiagonal(o, o);
+                })
+                .style("stroke", d => colorScheme[d.target.data.type].link);
+
+            // تحديث جميع الروابط
+            linkEnter.merge(link)
+                .transition()
+                .duration(duration)
+                .attr("d", d => verticalDiagonal(d.source, d.target));
+
+            // تحديث العقد
+            const node = g.selectAll(".node")
+                .data(nodes, d => d.id || (d.id = ++i));
+                
+            // إزالة العقد القديمة
+            node.exit()
+                .transition()
+                .duration(duration)
+                .attr("transform", d => `translate(${source.x0},${source.y0})`)
+                .remove();
+
+            // إضافة عقد جديدة
+            const nodeEnter = node.enter()
+                .append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${source.x0},${source.y0})`)
+                .on("click", (event, d) => {
+                    // تبديل حالة العقدة (مفتوحة/مغلقة)
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    } else if (d._children) {
+                        d.children = d._children;
+                        d._children = null;
+                    }
+                    update(d);
+                })
+                .on("mouseover", (event, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    
+                    let typeLabel;
+                    switch (d.data.type) {
+                        case "main": typeLabel = "محطة رئيسية"; break;
+                        case "substation": typeLabel = "محطة توزيع"; break;
+                        case "transformer": typeLabel = "محول"; break;
+                        case "branch": typeLabel = "فرع"; break;
+                    }
+                        
+                    tooltip.html(`
+                        <h3>${d.data.name}</h3>
+                        <p>النوع: <span class="value">${typeLabel}</span></p>
+                        <p>القدرة: <span class="value">${d.data.value} ميجاوات</span></p>
+                        ${d._children ? `<p>عدد الفروع: <span class="value">${d._children.length}</span></p>` : ''}
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+
+            // إضافة مستطيلات للعقد
+            nodeEnter.append("rect")
+                .attr("rx", 8)
+                .attr("ry", 8)
+                .attr("width", d => 0)
+                .attr("height", d => 0)
+                .attr("x", d => 0)
+                .attr("y", d => 0)
+                .attr("fill", d => colorScheme[d.data.type].fill)
+                .attr("stroke", d => colorScheme[d.data.type].stroke);
+
+            // إضافة نص للعقد
+            nodeEnter.append("text")
+                .attr("dy", 5)
+                .attr("text-anchor", "middle")
+                .text(d => d.data.name)
+                .style("fill-opacity", 0);
+                
+            // إضافة قيمة للعقد    
+            nodeEnter.append("text")
+                .attr("class", "node-value")
+                .attr("dy", 23)
+                .attr("text-anchor", "middle")
+                .text(d => d.data.value ? `${d.data.value} ميجاوات` : "")
+                .style("fill-opacity", 0);
+
+            // إضافة مؤشر لوجود أبناء
+            nodeEnter.append("text")
+                .attr("class", "has-children")
+                .attr("dy", 3)
+                .attr("text-anchor", "middle")
+                .attr("font-family", "FontAwesome")
+                .text(d => d._children ? "+" : d.children ? "-" : "")
+                .style("fill-opacity", 0);
+
+            // تحديث حجم وموضع العقد
+            const nodeUpdate = nodeEnter.merge(node)
+                .transition()
+                .duration(duration)
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+
+            // تحديث مظهر المستطيلات
+            nodeUpdate.select("rect")
+                .attr("width", d => d.rectWidth)
+                .attr("height", d => d.rectHeight)
+                .attr("x", d => -d.rectWidth / 2)
+                .attr("y", d => -d.rectHeight / 2)
+                .attr("fill", d => colorScheme[d.data.type].fill)
+                .attr("stroke", d => colorScheme[d.data.type].stroke);
+
+            // تحديث مظهر النص
+            nodeUpdate.selectAll("text")
+                .style("fill-opacity", 1);
+                
+            // تحديث موقع النص
+            nodeUpdate.select("text:not(.node-value):not(.has-children)")
+                .attr("x", 0);
+                
+            // تحديث موقع نص القيمة
+            nodeUpdate.select(".node-value")
+                .attr("x", 0);
+                
+            // تحديث موقع مؤشر الأبناء
+            nodeUpdate.select(".has-children")
+                .attr("y", d => d.rectHeight / 2 - 10)
+                .attr("x", d => d.rectWidth / 2 - 15)
+                .text(d => d._children ? "+" : d.children ? "-" : "");
+
+            // حفظ المواضع القديمة للانتقال
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+        }
+
+        // وظيفة لرسم منحنى بين نقطتين - عرض رأسي
+        function verticalDiagonal(s, d) {
+            const path = `M ${s.x} ${s.y}
+                    C ${s.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${d.y}`;
+            return path;
+        }
+
+        // متغير لحفظ معرف العقد
+        let i = 0;
+
+        // تهيئة البيانات الأولية
+        root = d3.hierarchy(sampleData);
+        root.x0 = width / 2;
+        root.y0 = 0;
+        
+        // معالجة البيانات الأولية
+        root.descendants().forEach(d => {
+            d.id = i++;
+            // حفظ الأبناء في _children لفتحهم لاحقاً
+            if (d.depth > 1) {
+                d._children = d.children;
+                d.children = null;
+            }
+        });
+
+        // رسم الشجرة الأولية
+        update(root);
+        
+        // توسيط العرض الأولي
+        svg.call(
+            zoom.transform, 
+            d3.zoomIdentity.translate(width/4, 30).scale(0.8)
+        );
+        
+        // دوال التحكم
+        d3.select("#expandAll").on("click", () => {
+            // فتح جميع العقد
+            expandAll(root);
+            update(root);
+        });
+        
+        d3.select("#collapseAll").on("click", () => {
+            // إغلاق جميع العقد ما عدا الجذر
+            root.children.forEach(collapseAll);
+            update(root);
+        });
+        
+        d3.select("#resetZoom").on("click", () => {
+            // إعادة ضبط التكبير/التصغير
+            svg.transition().duration(750).call(
+                zoom.transform, 
+                d3.zoomIdentity.translate(width/4, 30).scale(0.8)
+            );
+        });
+        
+        // وظيفة لفتح جميع العقد
+        function expandAll(d) {
+            if (d._children) {
+                d.children = d._children;
+                d._children = null;
+                d.children.forEach(expandAll);
+            }
+            if (d.children) {
+                d.children.forEach(expandAll);
+            }
+        }
+        
+        // وظيفة لإغلاق جميع العقد
+        function collapseAll(d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+                d._children.forEach(collapseAll);
+            }
+        }
+    </script>
+</body>
+</html>
